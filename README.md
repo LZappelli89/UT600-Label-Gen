@@ -40,7 +40,7 @@ If the bar fills and says *Very hard to read*, flatten the label, avoid glare an
 Open the **Type code** tab and enter the characters printed after **ID:** on the label (8 characters, for example `54099B87`).
 
 - **Keypad:** tap **ABC** for letters and **123** for numbers.
-- **Voice:** tap **Say the ID** and read each character. Use the phonetic alphabet for letters, because B, C, D and E sound alike:
+- **Voice:** tap **Say the ID** and read each character. Use the phonetic alphabet where possible:
 
   | Letter | Say |
   |---|---|
@@ -78,7 +78,7 @@ The camera and microphone only work over **https**, which GitHub Pages provides.
 
 ### Updating
 
-Upload the new `index.html` over the old one and **Commit changes**. The version shows at the bottom of the main screen (for example *Label Rescan · 9 Oct 2026 · v18*). If a phone still shows the old version after a few minutes, fully close the app and reopen it, or add `?v=18` to the end of the link.
+Upload the new `index.html` over the old one and **Commit changes**. The version shows at the bottom of the main screen (for example *Label Rescan · 9 Oct 2026 · v20*). If a phone still shows the old version after a few minutes, fully close the app and reopen it, or add `?v=20` to the end of the link.
 
 ---
 
@@ -121,6 +121,24 @@ The damaged-code repair uses this layout. It knows which parts of the code never
 
 ---
 
+## Stopping the Allow pop-ups
+
+The phone, not the app, decides whether to ask for camera and microphone permission. These steps make it remember. The same steps are in the app under **⚙ Settings → Stop the Allow pop-ups**.
+
+**iPhone (Safari)**
+1. Open the app's link in Safari.
+2. Tap **aA** (or the page menu) in the address bar → **Website Settings**.
+3. Set **Camera** and **Microphone** to **Allow**.
+
+Or for every site: **Settings → Apps → Safari → Camera** and **Microphone** → **Allow**. When the app is opened from a home-screen icon, an iPhone may still ask once each time the app is opened. That is an iPhone limit.
+
+**Android (Chrome)**
+Chrome remembers after the first **Allow**. If it keeps asking, tap the icon to the left of the web address → **Permissions** (or **Site settings**) → set **Camera** and **Microphone** to **Allow**.
+
+The app also keeps the camera open for 3 minutes after a scan, so **Scan next** starts instantly without asking again. Tap **Stop**, switch to another app, or leave it idle and the camera turns off.
+
+---
+
 ## Phone and browser support
 
 | | iPhone (Safari) | Android (Chrome) |
@@ -138,7 +156,9 @@ If the **Say the ID** button is missing, that browser doesn't support voice. Try
 
 | Problem | Fix |
 |---|---|
-| Camera won't open | Allow camera access for the site in the phone's settings, and make sure you're on the `https://` link |
+| Camera won't open | Allow camera access for the site (see *Stopping the Allow pop-ups*), and make sure you're on the `https://` link |
+| Asked to Allow every time | See *Stopping the Allow pop-ups* |
+| Voice won't take a new ID | Fixed in v20. Update the app. Tapping the keypad or **Clear** now always stops voice entry |
 | Code won't read | Flatten the label, avoid glare, fill most of the box with the code; or use **Scan from photo**; or enter the ID by hand |
 | Field scanner won't read the phone screen | Turn screen brightness up, and hold the scanner a little further from the screen at a slight angle |
 | *That's the label you just scanned* | The app ignores the previous label for 5 seconds after **Scan next**. Move to the next label |

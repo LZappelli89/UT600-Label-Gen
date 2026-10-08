@@ -84,6 +84,10 @@ input[type=text]{font-family:ui-monospace,Menlo,Consolas,monospace;letter-spacin
 .natogrid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px 10px}
 .natogrid span{font-size:15px;color:var(--muted);white-space:nowrap}
 .natogrid b{display:inline-block;min-width:1.2em;font:700 16px ui-monospace,Menlo,Consolas,monospace;color:var(--text)}
+.permhelp{margin-top:16px;border:1px solid var(--line);border-radius:12px;padding:4px 12px;background:var(--field)}
+.permhelp summary{font-weight:700;padding:10px 0;color:var(--text)}
+.permhelp ol{margin:0 0 10px;padding-left:20px;font-size:14px;line-height:1.45}
+.permhelp p{font-size:13px;color:var(--muted);margin:0 0 10px}
 .voicemsg{text-align:center;margin:8px 0 0}
 .voicemsg b{color:var(--text)}
 .pad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
@@ -290,6 +294,10 @@ header h1{white-space:nowrap}
     <label class="chk"><input type="checkbox" id="sAutoFull"> Open full screen straight after a scan</label>
 
 
+    <details class="permhelp" id="permHelp">
+      <summary>Stop the Allow pop-ups</summary>
+      <div id="permSteps"></div>
+    </details>
     <label class="f" for="sTheme">Colour theme</label>
     <select id="sTheme">
       <option value="auto">Match phone setting</option>
@@ -658,7 +666,7 @@ function typedChanged(){
   if (parseBracketed(line)) typedTimer = setTimeout(()=>logScan(line, how), 2500);
   else if (spec.text.length === Math.max(1, +settings.idLen||8)) typedTimer = setTimeout(()=>logItem({id: spec.text, method:how}), 2500);
 }
-$("manual").oninput = () => { entryMethod = "Typed"; typedChanged(); };
+$("manual").oninput = () => { if (listening || rec) stopVoice(); entryMethod = "Typed"; typedChanged(); };
 /* ---- big-button keypad ---- */
 let padMode = "num", kbMode = false;
 function padLetters(){ return (settings.letters||DEF.letters).toUpperCase().replace(/[^A-Z]/g,"").split("").filter((c,i,a)=>a.indexOf(c)===i); }
@@ -676,6 +684,8 @@ function drawPad(){
 }
 $("pad").onclick = e => {
   const b = e.target.closest("button"); if (!b) return;
+  if (listening || rec) stopVoice();
+  if (b.dataset.k === "clr") voiceMsg("");
   const k = b.dataset.k, m = $("manual");
   if (k==="sw"){ padMode = padMode==="num" ? "abc" : "num"; drawPad(); return; }
   if (k==="del") m.value = m.value.slice(0,-1);
@@ -1221,15 +1231,21 @@ async function startCam(){
     const box=document.createElement("div"); box.id="aim";
     box.style.cssText="position:absolute;inset:14%;border:3px solid var(--accent);border-radius:10px;box-shadow:0 0 0 2000px rgba(0,0,0,.25);pointer-events:none";
     r.appendChild(box); r.style.overflow="hidden"; }
+  clearTimeout(camIdleTimer);
   try{
-    stream = await navigator.mediaDevices.getUserMedia({audio:false, video:{facingMode:{ideal:"environment"}, width:{ideal:1920}, height:{ideal:1080}}});
-    video.srcObject = stream; await video.play();
+    const live = stream && stream.getVideoTracks().some(t => t.readyState === "live");
+    if (!live){
+      if (stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }
+      stream = await navigator.mediaDevices.getUserMedia({audio:false, video:{facingMode:{ideal:"environment"}, width:{ideal:1920}, height:{ideal:1080}}});
+    }
+    if (video.srcObject !== stream) video.srcObject = stream;
+    await video.play();
     const track = stream.getVideoTracks()[0];
     try{ await track.applyConstraints({advanced:[{focusMode:"continuous"}]}); }catch(e){}
     camRegion=null; cleanIdx=0; robustTries=0; readFrames=0; ownSeen=-99; setScanStatus("look"); running = true; setupCamTools(track); loop();
   }catch(e){
-    stopCam();
-    show("Couldn't open the camera. Allow camera access for this site in your browser settings, then try again. ("+esc(e.message||e)+")");
+    releaseCam();
+    show("Couldn't open the camera. Allow camera access for this site (see Settings ⚙ → Stop the Allow pop-ups), then try again. ("+esc(e.message||e)+")");
   }
 }
 /* Scan status under the camera window.
@@ -1328,7 +1344,19 @@ function setupCamTools(track){
 function track(){ return stream && stream.getVideoTracks()[0]; }
 $("zoom").oninput = e => { try{ track().applyConstraints({advanced:[{zoom:+e.target.value}]}); }catch(_){} };
 $("torchBtn").onclick = ()=>{ torchOn=!torchOn; try{ track().applyConstraints({advanced:[{torch:torchOn}]}); }catch(_){} };
+// stopCam(): pause scanning but keep the camera open for a few minutes, so "Scan next"
+// starts instantly and the phone doesn't ask for permission again.
+// releaseCam(): actually turn the camera off.
+let camIdleTimer = 0;
+const CAM_KEEP_MS = 3 * 60 * 1000;
 function stopCam(){
+  running=false;
+  $("camWrap").classList.add("hidden"); $("startBtn").classList.remove("hidden");
+  clearTimeout(camIdleTimer);
+  if (stream) camIdleTimer = setTimeout(releaseCam, CAM_KEEP_MS);
+}
+function releaseCam(){
+  clearTimeout(camIdleTimer);
   running=false; torchOn=false;
   if (stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }
   video.srcObject=null;
@@ -1346,11 +1374,11 @@ function handleDecoded(text, method){
   if (ok && settings.autoFull) openFull();
   else scrollTo({top:$("resultWrap").offsetTop-10, behavior:"smooth"});
 }
-$("startBtn").onclick = startCam; $("stopBtn").onclick = stopCam;
-$("againBtn").onclick = ()=>{ if ($("paneType").classList.contains("hidden")) {
+$("startBtn").onclick = startCam; $("stopBtn").onclick = releaseCam;
+$("againBtn").onclick = ()=>{ if (typeof stopVoice === "function" && (listening || rec)) { stopVoice(); voiceMsg(""); } if ($("paneType").classList.contains("hidden")) {
     if (window.LR_TEST){ $("photoInput").click(); return; }   // test link: no live camera
     lastScan.until = Date.now() + 5000; scrollTo({top:0,behavior:"smooth"}); startCam(); } else { $("manual").value=""; render("",false); padMode="num"; drawPad(); scrollTo({top:0,behavior:"smooth"}); } };
-document.addEventListener("visibilitychange", ()=>{ if (document.hidden && running) stopCam(); });
+document.addEventListener("visibilitychange", ()=>{ if (document.hidden){ releaseCam(); if (typeof stopVoice === "function" && (listening || rec)) stopVoice(); } });
 
 /* ---- photo ---- */
 $("photoBtn").onclick = ()=>$("photoInput").click();
@@ -1518,42 +1546,61 @@ function showNato(on){
   $("natoNote").hidden = !on;
 }
 function voiceMsg(html){ $("voiceMsg").innerHTML = html; $("voiceMsg").hidden = !html; }
+// Some phones (iPhones especially) repeat the whole sentence so far in each new result,
+// so join pieces without doubling them up.
+function joinT(a, t){
+  a = (a||"").trim(); t = (t||"").trim();
+  if (!a) return t; if (!t) return a;
+  const al = a.toLowerCase(), tl = t.toLowerCase();
+  if (tl.startsWith(al)) return t;
+  if (al.endsWith(tl)) return a;
+  return a + " " + t;
+}
 function bestOf(alts){
   const need = Math.max(1, +settings.idLen||8);
   let best = null;
   for (const a of alts){
-    const p = parseSpoken(heardFinal + " " + a);
+    const said = joinT(heardFinal, a), p = parseSpoken(said);
     const score = (p.id.length === need ? 100 : 0) - Math.abs(p.id.length - need) - p.unknown.length * 2;
-    if (!best || score > best.score) best = Object.assign(p, {score, said: (heardFinal + " " + a).trim()});
+    if (!best || score > best.score) best = Object.assign(p, {score, said});
   }
   return best;
 }
+// Fully shut the recogniser down and disconnect it, so nothing it sends later can
+// overwrite what the user types or says next.
 function stopVoice(){
   clearTimeout(voiceTimer);
-  if (rec){ try{ rec.stop(); }catch(e){} }
+  const r = rec; rec = null;
+  if (r){ r.onresult = r.onerror = r.onend = null; try{ r.abort(); }catch(e){} try{ r.stop(); }catch(e){} }
   listening = false; $("micBtn").classList.remove("on"); $("micLabel").textContent = "Say the ID"; showNato(false);
 }
-function startVoice(){
+let voiceStarting = false;
+async function startVoice(){
   if (listening){ stopVoice(); return; }
+  if (voiceStarting) return;
+  const hadOld = !!rec; stopVoice();
+  if (hadOld){ voiceStarting = true; await new Promise(r => setTimeout(r, 300)); voiceStarting = false; }  // let the old one finish closing
   heardFinal = "";
-  rec = new Speech();
-  rec.lang = navigator.language && /^en/i.test(navigator.language) ? navigator.language : "en-AU";
-  rec.interimResults = true; rec.continuous = true; rec.maxAlternatives = 5;
-  rec.onresult = e => {
-    let interimAlts = [""];
-    for (let i = e.resultIndex; i < e.results.length; i++){
+  const me = new Speech(); rec = me;
+  me.lang = navigator.language && /^en/i.test(navigator.language) ? navigator.language : "en-AU";
+  me.interimResults = true; me.continuous = true; me.maxAlternatives = 5;
+  me.onresult = e => {
+    if (rec !== me || !listening) return;          // stray result from a finished session
+    // rebuild what's been said from every result so far; the last one may still be changing
+    let prefix = "", lastAlts = [""];
+    for (let i = 0; i < e.results.length; i++){
       const r = e.results[i];
-      if (r.isFinal){
-        const alts = Array.from(r).map(x => x.transcript);
-        const b = bestOf(alts); heardFinal = b.said;
-      } else interimAlts = [r[0].transcript];
+      if (i === e.results.length - 1) lastAlts = Array.from(r).map(x => x.transcript);
+      else prefix = joinT(prefix, r[0].transcript);
     }
-    const b = bestOf(interimAlts);
+    heardFinal = prefix;
+    const b = bestOf(lastAlts);
     $("manual").value = b.id; padMode = "num"; drawPad(); entryMethod = "Voice"; typedChanged();
     voiceMsg(`Heard: “${esc(b.said)}”` + (b.unknown.length ? `<br>Didn't understand: ${esc(b.unknown.join(", "))}` : ""));
     if (b.id.length >= Math.max(1, +settings.idLen||8) && !b.unknown.length) stopVoice();
   };
-  rec.onerror = e => {
+  me.onerror = e => {
+    if (rec !== me) return;
     const m = {"not-allowed":"Microphone blocked. Allow microphone (and speech recognition) for this site in your phone settings.",
                "service-not-allowed":"Voice entry isn't allowed in this browser. Try Safari or Chrome.",
                "no-speech":"Didn't hear anything. Tap the microphone and try again.",
@@ -1562,8 +1609,8 @@ function startVoice(){
     if (m) voiceMsg(m);
     stopVoice();
   };
-  rec.onend = () => { if (listening) stopVoice(); };
-  try{ rec.start(); }catch(e){ voiceMsg("Couldn't start voice entry."); return; }
+  me.onend = () => { if (rec === me && listening) stopVoice(); };
+  try{ me.start(); }catch(e){ rec = null; voiceMsg("Couldn't start voice entry. Wait a second and tap the microphone again."); return; }
   listening = true; $("micBtn").classList.add("on"); $("micLabel").textContent = "Listening… tap to stop"; showNato(true);
   voiceMsg("Say each character, e.g. <b>five four zero nine nine Bravo eight seven</b>");
   voiceTimer = setTimeout(stopVoice, 20000);
@@ -1572,8 +1619,26 @@ if (Speech && !window.LR_TEST){ $("micBtn").hidden = false; $("micBtn").onclick 
 $("tabScan").addEventListener("click", () => { if (listening) stopVoice(); });
 updateTypeHint();
 
+/* ---- permission help (the phone decides whether to ask; these steps make it remember) ---- */
+(function(){
+  const ua = navigator.userAgent, ios = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  const iosSteps = `<ol>
+      <li>Open this app's link in <b>Safari</b>.</li>
+      <li>Tap <b>aA</b> (or the page menu) in the address bar → <b>Website Settings</b>.</li>
+      <li>Set <b>Camera</b> and <b>Microphone</b> to <b>Allow</b>.</li>
+    </ol>
+    <p>Or for every site: iPhone <b>Settings → Apps → Safari</b> → <b>Camera</b> and <b>Microphone</b> → <b>Allow</b>.
+    When opened from a home-screen icon, an iPhone may still ask once each time the app is opened. That's an iPhone limit; the app keeps the camera open between scans so it won't keep asking while you work.</p>`;
+  const androidSteps = `<ol>
+      <li>Chrome remembers after you tap <b>Allow</b> once.</li>
+      <li>If it keeps asking, tap the icon to the left of the web address → <b>Permissions</b> (or <b>Site settings</b>).</li>
+      <li>Set <b>Camera</b> and <b>Microphone</b> to <b>Allow</b>.</li>
+    </ol>`;
+  $("permSteps").innerHTML = ios ? iosSteps + `<p><b>Android:</b></p>` + androidSteps : androidSteps + `<p><b>iPhone:</b></p>` + iosSteps;
+})();
+
 /* ---- version + colour theme ---- */
-const APP_VERSION = "9 Oct 2026 · v19";
+const APP_VERSION = "9 Oct 2026 · v20";
 $("appVer").textContent = "Label Rescan · " + APP_VERSION;
 const THEMES = {auto:1, light:1, dark:1};
 let theme = "auto"; try{ theme = localStorage.getItem("lr_theme") || "auto"; }catch(e){}
