@@ -113,6 +113,17 @@ code.raw{display:block;background:var(--field);border-radius:8px;padding:10px;wo
 #sheet h2{margin:0 0 4px;font-size:18px}
 .chk{display:flex;gap:10px;align-items:center;margin-top:14px;font-size:15px}
 .chk input{width:22px;height:22px}
+.scanstat{width:min(68vw,260px);margin:10px auto 0;display:flex;flex-direction:column;gap:6px;align-items:stretch;text-align:center}
+.scanstat span{font-size:14px;font-weight:600;color:var(--muted)}
+.scanstat.reading span{color:var(--text)}
+.bar{height:10px;background:var(--line);border-radius:5px;overflow:hidden;position:relative}
+.bar i{position:absolute;left:0;top:0;bottom:0;width:0;background:var(--accent);border-radius:5px;transition:width .25s}
+.bar.indet i{width:30%;animation:indet 1.4s ease-in-out infinite}
+@keyframes indet{0%{left:-30%}100%{left:100%}}
+#aim{transition:border-color .2s}
+#aim.seen{border-color:var(--ok)!important;animation:aimpulse 1s ease-in-out infinite}
+@keyframes aimpulse{50%{box-shadow:0 0 0 2000px rgba(0,0,0,.25),inset 0 0 0 3px var(--ok)}}
+@media (prefers-reduced-motion: reduce){.bar.indet i{animation:none;left:35%}#aim.seen{animation:none}}
 @media (min-width:700px){main,.tabs{max-width:620px;margin-left:auto;margin-right:auto;width:100%}main{padding:0 0 24px}.tabs{margin-top:6px}}
 </style>
 </head>
@@ -138,6 +149,10 @@ code.raw{display:block;background:var(--field);border-radius:8px;padding:10px;wo
       <button class="big" id="startBtn">Start camera</button>
       <div id="camWrap" class="hidden" style="margin-top:12px">
         <div id="reader"></div>
+        <div class="scanstat" aria-live="polite">
+          <div class="bar indet" id="scanBarWrap"><i id="scanBar"></i></div>
+          <span id="scanText">Looking for the square code…</span>
+        </div>
         <div class="camtools">
           <button class="iconbtn hidden" id="torchBtn">Light</button>
           <span id="zoomWrap" class="hidden" style="display:flex;flex:1;gap:8px;align-items:center;font-size:13px;color:var(--muted)">Zoom <input type="range" id="zoom"></span>
@@ -1051,7 +1066,8 @@ const RDM = (() => {
     else { let best = null; for (const o of orientations(quad.map(p => p.slice()))) { const s = fitScore(img, o, FIXED_ALL); if (!best || s > best.s) best = { s, o }; } starts.push(best); }
     for (const st of starts) {
       if (st.s < 0.75) continue;   // nothing like a Data Matrix border here
-      const { q } = fitQuad(img, st.o);
+      const { q, score } = fitQuad(img, st.o);
+      if (score > lastFit) lastFit = score;
       // the border pattern is symmetric about the BL-TR diagonal, so try the mirror too
       for (const qq of [q, [q[2], q[1], q[0], q[3]]]) for (const sampler of [sampleGlobal, samplePiecewise]) {
         const r = tryDecode(sampler(img, qq));
@@ -1086,7 +1102,7 @@ const RDM = (() => {
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const p = y * W + x; if (x < W - 1) hE[p] = dark[p] !== dark[p + 1]; if (y < H - 1) vE[p] = dark[p] !== dark[p + W]; }
     const Id = integ(dark), Ih = integ(hE), Iv = integ(vE);
     const cands = [];
-    for (let s = 40; s < Math.min(W, H) * 0.95; s = Math.round(s * 1.18)) {
+    for (let s = 40; s < Math.min(W, H) * 0.8; s = Math.round(s * 1.18)) {
       const st = Math.max(3, Math.round(s / 8));
       for (let y = 0; y + s <= H; y += st) for (let x = 0; x + s <= W; x += st) {
         const A = s * s, d = box(Id, x, y, x + s, y + s) / A;
@@ -1104,8 +1120,9 @@ const RDM = (() => {
     }
     cands.sort((a, b) => b.score - a.score);
     const keep = [];
+    const iou = (a, b) => { const ix = Math.max(0, Math.min(a.x + a.s, b.x + b.s) - Math.max(a.x, b.x)), iy = Math.max(0, Math.min(a.y + a.s, b.y + b.s) - Math.max(a.y, b.y)), I = ix * iy; return I / (a.s * a.s + b.s * b.s - I); };
     for (const c of cands) {
-      if (keep.some(k => Math.abs(k.x + k.s / 2 - c.x - c.s / 2) < Math.max(k.s, c.s) / 2 && Math.abs(k.y + k.s / 2 - c.y - c.s / 2) < Math.max(k.s, c.s) / 2)) continue;
+      if (keep.some(k => iou(k, c) > 0.3)) continue;
       keep.push(c); if (keep.length >= maxCands) break;
     }
     // orientation from 4x-angle-averaged gradients; size of the rotated square from the window
@@ -1123,6 +1140,8 @@ const RDM = (() => {
     });
   }
 
+  // best border-pattern match seen since the last reset (above ~0.9 means a code is in view)
+  let lastFit = 0;
   // main entry: img = {g: Uint8 grey, w, h}; hints = quads from another detector
   function read(img, hints = [], opts = {}) {
     const tried = [];
@@ -1139,7 +1158,7 @@ const RDM = (() => {
     }
     return null;
   }
-  return { read, decodeAt, coarseFit, edgeSearch, fitScore:(img,q)=>fitScore(img,q,FIXED_ALL), refine:(img,q)=>fitQuad(img,q), locate: locateWindows, rsCorrect, _t: { TEMPLATES, PLACE, padVal } };
+  return { get lastFit(){ return lastFit; }, resetFit(){ lastFit = 0; }, read, decodeAt, coarseFit, edgeSearch, fitScore:(img,q)=>fitScore(img,q,FIXED_ALL), refine:(img,q)=>fitQuad(img,q), locate: locateWindows, rsCorrect, _t: { TEMPLATES, PLACE, padVal } };
 })();
 
 /* grey image (one byte per pixel) of part of an image/video, for the robust reader */
@@ -1173,10 +1192,34 @@ async function startCam(){
     video.srcObject = stream; await video.play();
     const track = stream.getVideoTracks()[0];
     try{ await track.applyConstraints({advanced:[{focusMode:"continuous"}]}); }catch(e){}
-    camRegion=null; cleanIdx=0; running = true; setupCamTools(track); loop();
+    camRegion=null; cleanIdx=0; robustTries=0; readFrames=0; ownSeen=-99; setScanStatus("look"); running = true; setupCamTools(track); loop();
   }catch(e){
     stopCam();
     show("Couldn't open the camera. Allow camera access for this site in your browser settings, then try again. ("+esc(e.message||e)+")");
+  }
+}
+/* Scan status under the camera window.
+   "look": nothing found yet (moving bar). "read": a code is in view but not read yet; the bar
+   fills as repair attempts are worked through (each robust attempt counts as several clean-ups). */
+let robustTries = 0, statusPhase = "", ownSeen = -99, readFrames = 0;
+// A full pass of repairs (different clean-ups, sizes and grid fits on fresh frames) takes about
+// this many camera frames, roughly 8-12 seconds on a phone. The bar shows progress through it.
+const READ_FRAMES = 60;
+function setScanStatus(phase, frac){
+  const wrap = $("scanBarWrap"), bar = $("scanBar"), txt = $("scanText"), box = $("aim");
+  if (phase !== statusPhase){
+    statusPhase = phase;
+    wrap.classList.toggle("indet", phase === "look");
+    wrap.parentNode.classList.toggle("reading", phase === "read");
+    if (box) box.classList.toggle("seen", phase === "read");
+    if (phase === "look"){ bar.style.width = ""; txt.textContent = "Looking for the square code…"; }
+  }
+  if (phase === "read"){
+    const f = Math.min(1, frac || 0);
+    bar.style.width = Math.max(6, Math.round(f*100)) + "%";
+    txt.textContent = f < 0.15 ? "Code found. Reading…"
+      : f < 1 ? `Code is damaged. Repairing… ${Math.round(f*100)}%`
+      : "Very hard to read. Flatten the label, hold steady, or type the ID.";
   }
 }
 async function loop(){
@@ -1204,10 +1247,12 @@ async function loop(){
         if (r) text = r.text;
       }
       // 3. Nothing detected for a while: look for the code ourselves every few frames
-      if (!text && !seenQuad && tick % 6 === 0 && tick - camSeen > 6){
+      if (!text && !seenQuad && tick % 4 === 0 && tick - camSeen > 6){
         const k = Math.min(1, 900/side), img = greyOf(video, sx, sy, side, side, side*k, side*k);
+        RDM.resetFit();
         const r = RDM.read(img, [], {maxCands: 2});
         if (r) text = r.text;
+        else if (RDM.lastFit > 0.9){ ownSeen = tick; robustTries += 2; }
       }
       // 4. Still nothing: try a few zxing clean-ups on that spot in this frame
       if (!text && camRegion && tick - camSeen < 15){
@@ -1220,6 +1265,14 @@ async function loop(){
           text = await decode(variant(base, CLEAN[cleanIdx % CLEAN.length]), CLEAN_OPTS);
           cleanIdx++;
         }
+      }
+      if (seenQuad) robustTries++;
+      if (!text){
+        if ((camRegion && tick - camSeen < 15) || tick - ownSeen < 15){
+          // keeps trying after a full pass, but leaves the bar full with advice
+          readFrames++;
+          setScanStatus("read", readFrames / READ_FRAMES);
+        } else { setScanStatus("look"); robustTries = 0; cleanIdx = 0; readFrames = 0; }
       }
       if (text && text === lastScan.raw && Date.now() < lastScan.until){
         text = null; show("That's the label you just scanned. Point the camera at the next one.","warn");
