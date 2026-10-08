@@ -1,766 +1,893 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>MagKeeper Mobile</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#14171c">
+<title>Label Rescan</title>
 <style>
-  :root{
-    /* MK6 SAP theme — matches ui_qt/theme.py */
-    --ink:#32363a; --slate:#354a5f; --slate-hover:#44596d;
-    --paper:#f7f7f7; --card:#ffffff; --line:#d9d9d9; --muted:#6a6d70;
-    --blue:#0a6ed1; --blue-dk:#085caf; --blue-soft:#e2eef9;
-    --go:#107e3e; --go-soft:#e2f0e8;
-    --violet:#7c3aed; --violet-dk:#6b28d9; --violet-soft:#efe6fd;
-    --amber:#e9730c; --amber-soft:#fdeede;
-    --red:#bb0000; --red-soft:#f6e0e0;
-  }
-  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-  html,body{height:100%}
-  body{font-family:'Inter',system-ui,sans-serif;background:var(--paper);color:var(--ink);-webkit-font-smoothing:antialiased;overflow:hidden}
-  #app{height:100dvh;display:flex;flex-direction:column;max-width:520px;margin:0 auto;background:var(--paper);position:relative}
-
-  .screen{position:absolute;inset:0;display:flex;flex-direction:column;background:var(--paper);transition:transform .22s ease, opacity .22s ease}
-  .screen.hidden{transform:translateX(100%);opacity:0;pointer-events:none}
-
-  /* header */
-  .apphead{background:var(--card);padding:14px 18px;border-bottom:1px solid var(--line);flex-shrink:0;display:flex;align-items:center;gap:11px}
-  .glyph{width:36px;height:36px;border-radius:9px;background:var(--slate);display:grid;place-items:center;color:#fff;font-family:'Sora';font-weight:800;font-size:15px}
-  .apptitle{font-family:'Sora';font-weight:700;font-size:18px;letter-spacing:-.01em}
-  .appkicker{font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.05em;text-transform:uppercase}
-  .modepill{margin-left:auto;font-size:10px;font-weight:800;letter-spacing:.05em;padding:5px 10px;border-radius:999px}
-  .modepill.pick{background:var(--blue-soft);color:var(--blue-dk)}
-  .modepill.stk{background:var(--violet-soft);color:var(--violet-dk)}
-  .modepill.grn{background:var(--go-soft);color:#0c6b41}
-  .hback{width:36px;height:36px;border-radius:9px;background:var(--paper);display:grid;place-items:center;color:var(--slate);border:none;cursor:pointer}
-
-  /* ---------- SPLASH ---------- */
-  .splash{flex:1;display:flex;flex-direction:column;padding:0 22px;overflow-y:auto}
-  .brand{margin-top:46px;text-align:center}
-  .logo{width:76px;height:76px;border-radius:20px;margin:0 auto 16px;background:var(--slate);display:grid;place-items:center;color:#fff;font-family:'Sora';font-weight:800;font-size:29px;position:relative}
-  .logo::after{content:"";position:absolute;inset:9px;border:2px solid rgba(255,255,255,.22);border-radius:13px}
-  .brand h2{font-family:'Sora';font-weight:800;font-size:23px;letter-spacing:-.02em}
-  .brand .tag{color:var(--muted);font-size:13px;margin-top:5px}
-  .modes{margin-top:40px;display:flex;flex-direction:column;gap:15px}
-  .modecard{border:none;text-align:left;border-radius:18px;padding:20px 18px;color:#fff;display:flex;align-items:center;gap:15px;cursor:pointer;width:100%}
-  .modecard.pick{background:var(--blue)}
-  .modecard.stk{background:var(--violet)}
-  .modecard.grn{background:var(--go)}
-  .modecard .mi{width:50px;height:50px;border-radius:13px;background:rgba(255,255,255,.16);display:grid;place-items:center;flex-shrink:0}
-  .modecard .mt{font-family:'Sora';font-weight:700;font-size:18px}
-  .modecard .ms{font-size:12.5px;opacity:.92;margin-top:3px;line-height:1.4}
-  .modecard .arw{margin-left:auto;opacity:.85}
-  .resume-note{margin-top:20px;background:var(--amber-soft);border:1px solid #f3c99a;border-radius:13px;padding:13px 15px;display:flex;gap:11px;align-items:center;cursor:pointer}
-  .resume-note .ri{width:34px;height:34px;border-radius:9px;background:#fff;display:grid;place-items:center;flex-shrink:0}
-  .resume-note .rt{font-size:12.5px;color:#8a5410;line-height:1.4}
-  .resume-note .rt b{color:#6f4109}
-  .splash .foot{margin-top:auto;padding:18px 0;text-align:center;color:#a7adb5;font-size:11px;font-weight:600}
-
-  /* ---------- SCAN BODY (shared) ---------- */
-  .body{flex:1;overflow-y:auto;padding:15px 16px 8px}
-  .field-label{font-size:11.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin:0 2px 7px}
-  .field-label .hint{float:right;text-transform:none;letter-spacing:0;font-weight:600;color:var(--blue)}
-
-  .scanfield{display:flex;gap:10px;align-items:stretch}
-  .scanfield input{flex:1;height:54px;border:2px solid var(--blue);border-radius:13px;padding:0 15px;font-size:16px;font-family:'JetBrains Mono';font-weight:600;color:var(--ink);background:#fff;outline:none}
-  .scanfield input::placeholder{font-family:'Inter';font-weight:500;color:#aeb4bb;font-size:14px}
-  .scanfield input.stk{border-color:var(--violet)}
-  .scanfield input.grn{border-color:var(--go)}
-  .scanfield .sbtn{width:54px;border:none;border-radius:13px;background:var(--blue);color:#fff;display:grid;place-items:center;cursor:pointer;flex-shrink:0}
-  .scanfield .sbtn.stk{background:var(--violet)}
-  .scanfield .sbtn.grn{background:var(--go)}
-
-  .textinput{width:100%;height:52px;border:1px solid var(--line);border-radius:13px;padding:0 15px;font-size:15px;font-weight:600;color:var(--ink);background:#fff;outline:none}
-  .textinput:focus{border-color:var(--violet)}
-
-  .recent{display:flex;gap:7px;flex-wrap:wrap;margin-top:9px}
-  .recent .rc{font-size:12px;font-weight:600;color:var(--slate);background:#fff;border:1px solid var(--line);border-radius:999px;padding:6px 12px;cursor:pointer}
-  .recent .rc:active{background:var(--violet-soft);border-color:var(--violet)}
-
-  .fptoggle{display:flex;gap:10px;margin-top:14px}
-  .fpbtn{flex:1;border:1.5px solid var(--line);background:#fff;border-radius:13px;padding:12px;text-align:center;cursor:pointer}
-  .fpbtn .l{font-family:'Sora';font-weight:700;font-size:14px;color:var(--slate)}
-  .fpbtn .d{font-size:11px;color:var(--muted);margin-top:2px}
-  .fpbtn.on{border-color:var(--violet);background:var(--violet-soft)}
-  .fpbtn.on .l{color:var(--violet-dk)}
-  .piecewrap{margin-top:12px;display:none}
-  .piecewrap.show{display:block}
-  .piecewrap input{width:100%;height:56px;border:1px solid var(--line);border-radius:13px;background:#fff;text-align:center;font-family:'JetBrains Mono';font-weight:700;font-size:26px;color:var(--ink);outline:none}
-  .piecewrap input:focus{border-color:var(--violet)}
-
-  .addbtn{margin-top:14px;width:100%;height:52px;border:none;border-radius:13px;color:#fff;font-family:'Sora';font-weight:700;font-size:16px;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer}
-  .addbtn.pick{background:var(--blue)}
-  .addbtn.stk{background:var(--violet)}
-  .addbtn:disabled{background:#c4c9ce;cursor:not-allowed}
-
-  /* running list */
-  .listcard{margin-top:18px;background:#fff;border:1px solid var(--line);border-radius:16px;overflow:hidden}
-  .lchead{display:flex;align-items:center;padding:12px 15px;border-bottom:1px solid var(--line)}
-  .lchead .h{font-family:'Sora';font-weight:700;font-size:13.5px;color:var(--slate)}
-  .lchead .count{margin-left:auto;font-family:'JetBrains Mono';font-weight:700;font-size:13px;color:#fff;background:var(--slate);padding:2px 9px;border-radius:999px}
-  .scanrow{display:flex;align-items:center;gap:11px;padding:11px 15px;border-bottom:1px solid var(--line)}
-  .scanrow:last-child{border-bottom:none}
-  .seq{width:26px;height:26px;border-radius:8px;background:var(--paper);display:grid;place-items:center;font-family:'JetBrains Mono';font-weight:700;font-size:12px;color:var(--muted);flex-shrink:0}
-  .scanrow .info{flex:1;min-width:0}
-  .scanrow .prod{font-size:13.5px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .scanrow .meta{font-size:11.5px;color:var(--muted);margin-top:2px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
-  .btag{font-family:'JetBrains Mono';font-weight:700;font-size:11px;color:var(--blue);background:var(--blue-soft);padding:2px 6px;border-radius:5px}
-  .qtag{font-size:10px;font-weight:800;letter-spacing:.04em;padding:2px 7px;border-radius:5px}
-  .qtag.full{background:var(--go-soft);color:#0c6b41}
-  .qtag.part{background:var(--amber-soft);color:#8a5410}
-  .del{width:30px;height:30px;border-radius:8px;border:none;background:var(--paper);color:var(--red);display:grid;place-items:center;flex-shrink:0;cursor:pointer}
-  .empty{padding:26px 16px;text-align:center;color:var(--muted);font-size:13px;line-height:1.5}
-
-  /* submit bar */
-  .submitbar{background:#fff;border-top:1px solid var(--line);padding:12px 16px calc(12px + env(safe-area-inset-bottom));flex-shrink:0;display:flex;gap:11px;align-items:center}
-  .submitbar .summ{flex:1;font-size:12.5px;color:var(--muted);font-weight:600;line-height:1.35}
-  .submitbar .summ b{color:var(--ink)}
-  .submitbtn{flex:0 0 auto;height:50px;padding:0 24px;border:none;border-radius:13px;background:var(--go);color:#fff;font-family:'Sora';font-weight:700;font-size:15.5px;display:flex;align-items:center;gap:8px;cursor:pointer}
-  .submitbtn:disabled{background:#c4c9ce;cursor:not-allowed}
-
-  /* toast */
-  .toast{position:fixed;left:50%;bottom:88px;transform:translateX(-50%) translateY(20px);background:var(--slate);color:#fff;padding:11px 18px;border-radius:11px;font-size:13.5px;font-weight:600;opacity:0;pointer-events:none;transition:.25s;z-index:50;box-shadow:0 8px 24px rgba(0,0,0,.28);max-width:88%;text-align:center}
-  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
-  .toast.go{background:var(--go)}
-  .toast.warn{background:var(--amber)}
-
-  /* modal */
-  .modal-bg{position:fixed;inset:0;background:rgba(20,25,32,.5);display:none;align-items:center;justify-content:center;z-index:60;padding:24px}
-  .modal-bg.show{display:flex}
-  .modal{background:#fff;border-radius:18px;padding:22px;max-width:360px;width:100%}
-  .modal h3{font-family:'Sora';font-weight:700;font-size:18px;margin-bottom:8px}
-  .modal p{font-size:13.5px;color:var(--muted);line-height:1.5;margin-bottom:18px}
-  .modal .mrow{display:flex;gap:10px}
-  .modal button{flex:1;height:46px;border-radius:11px;font-family:'Sora';font-weight:700;font-size:14px;cursor:pointer;border:none}
-  .modal .cancel{background:var(--paper);color:var(--slate)}
-  .modal .ok{background:var(--go);color:#fff}
-  .modal .danger{background:var(--red);color:#fff}
-
-  svg{display:block}
+:root{
+  /* Layout: one narrow column of big thumb-sized controls; the white barcode card is the only bright surface */
+  --bg:#14171c; --panel:#1d2128; --line:#2c323c; --text:#eef1f5; --muted:#9aa3b1; --field:#0f1216;
+  --accent:#ffb020; --accent-ink:#1a1300;
+  --err-bg:#3a1717; --err-line:#6b2626; --err-fg:#ffd0d0; --warn-bg:#3a2e12; --warn-line:#6b5520; --warn-fg:#ffe2a8;
+  --paper:#ffffff; --ink:#000000; --ok:#2fb36e; --bad:#e5484d;
+  --r:14px; color-scheme:dark;
+}
+@media (prefers-color-scheme: light){ :root:not([data-theme="dark"]){
+  --bg:#eef0f3; --panel:#ffffff; --line:#d6dae1; --text:#161a20; --muted:#5d6672; --field:#f6f7f9;
+  --accent:#f0a000; --accent-ink:#1a1300;
+  --err-bg:#fde8e8; --err-line:#f1b4b4; --err-fg:#7a1c1c; --warn-bg:#fff4dc; --warn-line:#efd08a; --warn-fg:#6a4b00; --ok:#1e9a58; --bad:#d93036;
+  color-scheme:light; } }
+:root[data-theme="light"]{
+  --bg:#eef0f3; --panel:#ffffff; --line:#d6dae1; --text:#161a20; --muted:#5d6672; --field:#f6f7f9;
+  --accent:#f0a000; --accent-ink:#1a1300;
+  --err-bg:#fde8e8; --err-line:#f1b4b4; --err-fg:#7a1c1c; --warn-bg:#fff4dc; --warn-line:#efd08a; --warn-fg:#6a4b00; --ok:#1e9a58; --bad:#d93036;
+  color-scheme:light; }
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0;background:var(--bg);color:var(--text);
+  font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-tap-highlight-color:transparent}
+body{min-height:100dvh;display:flex;flex-direction:column;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+header{display:flex;align-items:center;gap:10px;padding:14px 16px 8px}
+header h1{font-size:18px;margin:0;flex:1;letter-spacing:.2px}
+header h1 span{color:var(--accent)}
+.iconbtn{background:var(--panel);border:1px solid var(--line);color:var(--text);border-radius:12px;
+  height:40px;min-width:40px;padding:0 12px;font-size:15px}
+.tabs{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:6px 16px 12px;background:var(--panel);
+  padding:5px;border-radius:var(--r);border:1px solid var(--line)}
+.tabs button{border:0;background:transparent;color:var(--muted);font-size:16px;font-weight:600;padding:11px;border-radius:10px}
+.tabs button.on{background:var(--accent);color:var(--accent-ink)}
+main{flex:1;padding:0 16px 24px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px;margin-bottom:12px}
+.big{width:100%;border:0;border-radius:12px;padding:16px;font-size:18px;font-weight:700;background:var(--accent);color:var(--accent-ink)}
+.ghost{width:100%;border:1px solid var(--line);border-radius:12px;padding:13px;font-size:16px;font-weight:600;background:transparent;color:var(--text)}
+.row{display:flex;gap:8px}.row>*{flex:1}
+label.f{display:block;font-size:13px;color:var(--muted);margin:12px 0 6px}
+input[type=text],select{width:100%;background:var(--field);border:1px solid var(--line);color:var(--text);
+  border-radius:10px;padding:13px;font-size:17px}
+input[type=text]{font-family:ui-monospace,Menlo,Consolas,monospace;letter-spacing:.5px}
+.hint{color:var(--muted);font-size:13px;margin:8px 0 0}
+#reader{width:min(68vw,260px);aspect-ratio:1;margin:0 auto;border-radius:16px;overflow:hidden;background:#000;position:relative}
+#reader video{width:100%!important;height:100%!important;object-fit:cover;display:block}
+.guide{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.gtile{margin:0;border:2px solid var(--line);border-radius:12px;padding:10px 8px 8px;display:flex;flex-direction:column;align-items:center;gap:8px;background:var(--field)}
+.gtile.yes{border-color:var(--ok)}
+.gtile.no{border-color:var(--bad)}
+.gtile.no .gimg{opacity:.55}
+.gimg{height:64px;width:64px;border-radius:4px}
+.gimg.wide{width:auto;aspect-ratio:auto;max-width:100%}
+.gtile figcaption{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;text-align:left;line-height:1.2}
+.badge{flex:none;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:15px;font-weight:800;color:#fff}
+.badge.ok{background:var(--ok)}
+.badge.bad{background:var(--bad)}
+.camtools{display:flex;gap:8px;margin-top:10px;align-items:center}
+.camtools input[type=range]{flex:1}
+.hidden{display:none!important}
+/* result */
+#result{background:var(--paper);color:var(--ink);border-radius:var(--r);padding:16px 0 12px;display:flex;flex-direction:column;align-items:center}
+#result svg,#full svg{display:block;shape-rendering:crispEdges}
+.hr{font:15px/1.3 ui-monospace,Menlo,Consolas,monospace;color:var(--ink);margin-top:8px;padding:0 10px;text-align:center;word-break:break-all}
+#resultMeta{font-size:13px;color:var(--muted);margin:10px 2px 0;text-align:center}
+.err{background:var(--err-bg);border:1px solid var(--err-line);color:var(--err-fg);border-radius:12px;padding:12px;font-size:14px;margin-bottom:12px}
+.warn{background:var(--warn-bg);border:1px solid var(--warn-line);color:var(--warn-fg);border-radius:12px;padding:12px;font-size:14px;margin-bottom:12px}
+.seg{display:grid;grid-template-columns:1fr 1fr;gap:4px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:4px;margin-bottom:10px}
+.seg button{border:0;background:transparent;color:var(--muted);font-weight:600;font-size:15px;padding:10px;border-radius:9px}
+.seg button.on{background:var(--text);color:var(--bg)}
+#manual{font-size:28px;font-weight:700;letter-spacing:2px;text-align:center;padding:12px}
+.pad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
+.pad button{min-height:64px;border:1px solid var(--line);border-radius:12px;background:var(--field);color:var(--text);
+  font:700 28px/1 ui-monospace,Menlo,Consolas,monospace;touch-action:manipulation;user-select:none;-webkit-user-select:none}
+.pad button:active{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.pad button.fn{font:700 18px/1.1 system-ui,-apple-system,sans-serif;background:var(--panel)}
+.pad button.sw{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.sample{background:none;border:0;color:var(--accent);font-size:15px;padding:10px 0 0;text-decoration:underline}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+details{margin-top:4px}
+details summary{color:var(--muted);font-size:14px;padding:8px 0;cursor:pointer}
+table{width:100%;border-collapse:collapse;font-size:14px}
+td{padding:6px 4px;border-top:1px solid var(--line);vertical-align:top}
+td.ai{font-family:ui-monospace,monospace;color:var(--accent);white-space:nowrap}
+td.v{font-family:ui-monospace,monospace;word-break:break-all}
+code.raw{display:block;background:var(--field);border-radius:8px;padding:10px;word-break:break-all;font-size:13px}
+.shead{display:flex;align-items:center;gap:8px}
+.chip{background:var(--accent);color:var(--accent-ink);border-radius:999px;padding:2px 10px;font-weight:700;font-size:14px;font-variant-numeric:tabular-nums}
+.hist .id{font:700 18px/1.2 ui-monospace,Menlo,Consolas,monospace;letter-spacing:1px}
+.hist button{display:block;width:100%;text-align:left;background:transparent;border:0;border-top:1px solid var(--line);
+  color:var(--text);padding:11px 2px;font-family:ui-monospace,monospace;font-size:14px;word-break:break-all}
+.hist small{color:var(--muted);font-family:system-ui}
+/* full screen view */
+#full{position:fixed;inset:0;background:var(--paper);z-index:50;display:flex;align-items:center;justify-content:center}
+#full{overflow:hidden}
+#full .next{position:fixed;left:16px;right:16px;bottom:calc(16px + env(safe-area-inset-bottom));z-index:51;border:0;border-radius:14px;
+  padding:16px;font-size:18px;font-weight:700;background:var(--accent);color:var(--accent-ink)}
+#full .inner{position:absolute;left:50%;top:50%;display:flex;flex-direction:column;align-items:center}
+#full .hr{font-size:20px}
+#full .close{position:fixed;top:calc(12px + env(safe-area-inset-top));right:12px;background:var(--ink);color:var(--paper);border:0;border-radius:20px;padding:10px 16px;font-size:15px;z-index:51}
+/* settings sheet */
+#sheet{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:40;display:flex;align-items:flex-end}
+#sheet .panel{background:var(--panel);width:100%;max-height:88dvh;overflow:auto;border-radius:18px 18px 0 0;
+  padding:18px 16px calc(20px + env(safe-area-inset-bottom));border-top:1px solid var(--line)}
+#sheet h2{margin:0 0 4px;font-size:18px}
+.chk{display:flex;gap:10px;align-items:center;margin-top:14px;font-size:15px}
+.chk input{width:22px;height:22px}
+@media (min-width:700px){main,.tabs{max-width:620px;margin-left:auto;margin-right:auto;width:100%}main{padding:0 0 24px}.tabs{margin-top:6px}}
 </style>
 </head>
 <body>
-<div id="app">
+<header>
+  <h1>Label <span>Rescan</span></h1>
+  <button class="iconbtn" id="openSettings" aria-label="Settings">⚙︎ Settings</button>
+</header>
 
-  <!-- ============ SPLASH ============ -->
-  <div class="screen" id="s-splash">
-    <div class="splash">
-      <div class="brand">
-        <div class="logo">M6</div>
-        <h2>MagKeeper Mobile</h2>
-        <div class="tag" id="splash-tag">Field scanning · signed in</div>
-      </div>
-      <div class="modes">
-        <button class="modecard pick" onclick="openMode('pick')">
-          <div class="mi"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 12h10" stroke-width="2.4"/></svg></div>
-          <div><div class="mt">Pick</div><div class="ms">Scan the label, then the box, to pick an order</div></div>
-          <div class="arw"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4"><path d="m9 18 6-6-6-6"/></svg></div>
-        </button>
-        <button class="modecard stk" onclick="openMode('stk')">
-          <div class="mi"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 4v5"/></svg></div>
-          <div><div class="mt">Batch Stocktake</div><div class="ms">Count the stores — scan each box, full or part</div></div>
-          <div class="arw"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4"><path d="m9 18 6-6-6-6"/></svg></div>
-        </button>
-        <button class="modecard grn" onclick="openMode('grn')">
-          <div class="mi"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M3 7l9-4 9 4v10l-9 4-9-4V7z"/><path d="M3 7l9 4 9-4M12 11v10"/></svg></div>
-          <div><div class="mt">Goods Receipt</div><div class="ms">Receive a delivery — docket, scan boxes, mfg date</div></div>
-          <div class="arw"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4"><path d="m9 18 6-6-6-6"/></svg></div>
-        </button>
-      </div>
-      <div class="resume-note" id="resume-note" style="display:none" onclick="resumeHeld()">
-        <div class="ri"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e9730c" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9 9 0 0 0-6.4 2.6L3 8"/><path d="M3 3v5h5"/></svg></div>
-        <div class="rt" id="resume-text"></div>
-      </div>
-      <div class="foot">Unsent work is kept on this device</div>
-    </div>
-  </div>
-
-  <!-- ============ PICK ============ -->
-  <div class="screen hidden" id="s-pick">
-    <div class="apphead">
-      <button class="hback" onclick="leaveMode()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m15 18-6-6 6-6"/></svg></button>
-      <div><div class="apptitle">Pick</div><div class="appkicker">Scan label &amp; box</div></div>
-      <span class="modepill pick">PICK</span>
-    </div>
-    <div class="body">
-      <div class="field-label">1 · Scan QR label <span class="hint" id="pick-lbl-state">waiting</span></div>
-      <div class="scanfield">
-        <input id="pick-label" placeholder="Scan or type the QR label" autocomplete="off" enterkeyhint="next">
-        <button class="sbtn" onclick="document.getElementById('pick-label').focus()"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 12h10"/></svg></button>
-      </div>
-
-      <div class="field-label" style="margin-top:15px">2 · Scan box barcode</div>
-      <div class="scanfield">
-        <input id="pick-box" placeholder="Scan the box — batch is read from it" autocomplete="off" enterkeyhint="done">
-        <button class="sbtn" onclick="document.getElementById('pick-box').focus()"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M4 5v14M8 5v14M12 5v14M16 5v14M20 5v14"/></svg></button>
-      </div>
-      <button class="addbtn pick" id="pick-add" onclick="addPick()" disabled>
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6"><path d="M12 5v14M5 12h14"/></svg> Add box
-      </button>
-
-      <div class="listcard">
-        <div class="lchead"><span class="h">Scanned boxes</span><span class="count" id="pick-count">0</span></div>
-        <div id="pick-list"></div>
-      </div>
-    </div>
-    <div class="submitbar">
-      <div class="summ" id="pick-summ">No boxes yet</div>
-      <button class="submitbtn" id="pick-submit" onclick="submitMode()" disabled>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4Z"/></svg> Submit
-      </button>
-    </div>
-  </div>
-
-  <!-- ============ STOCKTAKE ============ -->
-  <div class="screen hidden" id="s-stk">
-    <div class="apphead">
-      <button class="hback" onclick="leaveMode()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m15 18-6-6 6-6"/></svg></button>
-      <div><div class="apptitle">Batch Stocktake</div><div class="appkicker">Count the stores</div></div>
-      <span class="modepill stk">STOCKTAKE</span>
-    </div>
-    <div class="body">
-      <div class="field-label">Product <span class="hint">stays until changed</span></div>
-      <input class="textinput" id="stk-product" placeholder="Type the product (e.g. 9m UT600)" autocomplete="off">
-      <div class="recent" id="stk-recent"></div>
-
-      <div class="field-label" style="margin-top:15px">Scan box barcode</div>
-      <div class="scanfield">
-        <input id="stk-box" class="stk" placeholder="Scan the box — batch is read from it" autocomplete="off" enterkeyhint="next">
-        <button class="sbtn stk" onclick="document.getElementById('stk-box').focus()"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M4 5v14M8 5v14M12 5v14M16 5v14M20 5v14"/></svg></button>
-      </div>
-
-      <div class="field-label" style="margin-top:15px">Manufactured date <span class="hint">for stock rotation</span></div>
-      <input class="textinput" id="stk-mfg" type="date" style="font-family:'JetBrains Mono'">
-
-      <div class="fptoggle">
-        <div class="fpbtn on" id="fp-full" onclick="setFull(true)"><div class="l">Full box</div><div class="d">whole box</div></div>
-        <div class="fpbtn" id="fp-part" onclick="setFull(false)"><div class="l">Part box</div><div class="d">enter pieces</div></div>
-      </div>
-      <div class="piecewrap" id="piecewrap">
-        <input id="stk-pieces" type="number" inputmode="numeric" placeholder="0" min="0">
-      </div>
-
-      <button class="addbtn stk" id="stk-add" onclick="addStk()" disabled>
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6"><path d="M12 5v14M5 12h14"/></svg> Add box
-      </button>
-
-      <div class="listcard">
-        <div class="lchead"><span class="h">Counted boxes</span><span class="count" id="stk-count">0</span></div>
-        <div id="stk-list"></div>
-      </div>
-    </div>
-    <div class="submitbar">
-      <div class="summ" id="stk-summ">No boxes yet</div>
-      <button class="submitbtn" id="stk-submit" onclick="submitMode()" disabled>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4Z"/></svg> Submit
-      </button>
-    </div>
-  </div>
-
-  <!-- ============ GOODS RECEIPT ============ -->
-  <div class="screen hidden" id="s-grn">
-    <div class="apphead">
-      <button class="hback" onclick="leaveMode()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m15 18-6-6 6-6"/></svg></button>
-      <div><div class="apptitle">Goods Receipt</div><div class="appkicker">Receive a delivery</div></div>
-      <span class="modepill grn">RECEIPT</span>
-    </div>
-    <div class="body">
-      <div class="field-label">Delivery docket <span class="hint">stays until changed</span></div>
-      <input class="textinput" id="grn-docket" placeholder="Enter the delivery docket number" autocomplete="off" style="border-color:var(--go)">
-
-      <div class="field-label" style="margin-top:15px">Product <span class="hint">stays until changed</span></div>
-      <input class="textinput" id="grn-product" placeholder="Type the product (e.g. 9m UT600)" autocomplete="off">
-      <div class="recent" id="grn-recent"></div>
-
-      <div class="field-label" style="margin-top:15px">Scan box barcode</div>
-      <div class="scanfield">
-        <input id="grn-box" class="grn" placeholder="Scan the box — batch is read from it" autocomplete="off" enterkeyhint="next">
-        <button class="sbtn grn" onclick="document.getElementById('grn-box').focus()"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M4 5v14M8 5v14M12 5v14M16 5v14M20 5v14"/></svg></button>
-      </div>
-
-      <div class="field-label" style="margin-top:15px">Manufactured date <span class="hint">for stock rotation</span></div>
-      <input class="textinput" id="grn-mfg" type="date" style="font-family:'JetBrains Mono'">
-
-      <div class="fptoggle">
-        <div class="fpbtn on" id="grnfp-full" onclick="setGrnFull(true)"><div class="l">Full box</div><div class="d">whole box</div></div>
-        <div class="fpbtn" id="grnfp-part" onclick="setGrnFull(false)"><div class="l">Part box</div><div class="d">enter pieces</div></div>
-      </div>
-      <div class="piecewrap" id="grn-piecewrap">
-        <input id="grn-pieces" type="number" inputmode="numeric" placeholder="0" min="0">
-      </div>
-
-      <button class="addbtn grn" id="grn-add" onclick="addGrn()" disabled style="background:var(--go)">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6"><path d="M12 5v14M5 12h14"/></svg> Add box
-      </button>
-
-      <div class="listcard">
-        <div class="lchead"><span class="h">Received boxes</span><span class="count" id="grn-count">0</span></div>
-        <div id="grn-list"></div>
-      </div>
-    </div>
-    <div class="submitbar">
-      <div class="summ" id="grn-summ">No boxes yet</div>
-      <button class="submitbtn" id="grn-submit" onclick="submitMode()" disabled>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4Z"/></svg> Submit
-      </button>
-    </div>
-  </div>
-
+<div class="tabs" role="tablist">
+  <button id="tabScan" class="on" role="tab">Scan 2D code</button>
+  <button id="tabType" role="tab">Type code</button>
 </div>
 
-<div class="toast" id="toast"></div>
-<div class="modal-bg" id="modal-bg"><div class="modal" id="modal"></div></div>
+<main>
+  <!-- SCAN -->
+  <section id="paneScan">
+    <div class="card">
+      <div class="guide" aria-label="What to scan">
+        <figure class="gtile yes"><svg viewBox="-1 -1 16 16" class="gimg" aria-hidden="true" shape-rendering="crispEdges"><rect x="-1" y="-1" width="16" height="16" fill="var(--paper)"/><g fill="var(--ink)"><rect x="0" y="0" width="1" height="1"/><rect x="2" y="0" width="1" height="1"/><rect x="4" y="0" width="1" height="1"/><rect x="6" y="0" width="1" height="1"/><rect x="8" y="0" width="1" height="1"/><rect x="10" y="0" width="1" height="1"/><rect x="12" y="0" width="1" height="1"/><rect x="0" y="1" width="1" height="1"/><rect x="1" y="1" width="1" height="1"/><rect x="2" y="1" width="1" height="1"/><rect x="4" y="1" width="1" height="1"/><rect x="6" y="1" width="1" height="1"/><rect x="7" y="1" width="1" height="1"/><rect x="9" y="1" width="1" height="1"/><rect x="10" y="1" width="1" height="1"/><rect x="11" y="1" width="1" height="1"/><rect x="12" y="1" width="1" height="1"/><rect x="13" y="1" width="1" height="1"/><rect x="0" y="2" width="1" height="1"/><rect x="1" y="2" width="1" height="1"/><rect x="3" y="2" width="1" height="1"/><rect x="4" y="2" width="1" height="1"/><rect x="8" y="2" width="1" height="1"/><rect x="10" y="2" width="1" height="1"/><rect x="12" y="2" width="1" height="1"/><rect x="0" y="3" width="1" height="1"/><rect x="1" y="3" width="1" height="1"/><rect x="2" y="3" width="1" height="1"/><rect x="3" y="3" width="1" height="1"/><rect x="5" y="3" width="1" height="1"/><rect x="8" y="3" width="1" height="1"/><rect x="10" y="3" width="1" height="1"/><rect x="11" y="3" width="1" height="1"/><rect x="12" y="3" width="1" height="1"/><rect x="13" y="3" width="1" height="1"/><rect x="0" y="4" width="1" height="1"/><rect x="2" y="4" width="1" height="1"/><rect x="3" y="4" width="1" height="1"/><rect x="5" y="4" width="1" height="1"/><rect x="6" y="4" width="1" height="1"/><rect x="9" y="4" width="1" height="1"/><rect x="0" y="5" width="1" height="1"/><rect x="2" y="5" width="1" height="1"/><rect x="4" y="5" width="1" height="1"/><rect x="5" y="5" width="1" height="1"/><rect x="7" y="5" width="1" height="1"/><rect x="9" y="5" width="1" height="1"/><rect x="13" y="5" width="1" height="1"/><rect x="0" y="6" width="1" height="1"/><rect x="2" y="6" width="1" height="1"/><rect x="6" y="6" width="1" height="1"/><rect x="9" y="6" width="1" height="1"/><rect x="11" y="6" width="1" height="1"/><rect x="0" y="7" width="1" height="1"/><rect x="4" y="7" width="1" height="1"/><rect x="5" y="7" width="1" height="1"/><rect x="7" y="7" width="1" height="1"/><rect x="8" y="7" width="1" height="1"/><rect x="9" y="7" width="1" height="1"/><rect x="10" y="7" width="1" height="1"/><rect x="11" y="7" width="1" height="1"/><rect x="13" y="7" width="1" height="1"/><rect x="0" y="8" width="1" height="1"/><rect x="1" y="8" width="1" height="1"/><rect x="2" y="8" width="1" height="1"/><rect x="3" y="8" width="1" height="1"/><rect x="5" y="8" width="1" height="1"/><rect x="6" y="8" width="1" height="1"/><rect x="11" y="8" width="1" height="1"/><rect x="12" y="8" width="1" height="1"/><rect x="0" y="9" width="1" height="1"/><rect x="1" y="9" width="1" height="1"/><rect x="4" y="9" width="1" height="1"/><rect x="5" y="9" width="1" height="1"/><rect x="6" y="9" width="1" height="1"/><rect x="7" y="9" width="1" height="1"/><rect x="10" y="9" width="1" height="1"/><rect x="11" y="9" width="1" height="1"/><rect x="12" y="9" width="1" height="1"/><rect x="13" y="9" width="1" height="1"/><rect x="0" y="10" width="1" height="1"/><rect x="1" y="10" width="1" height="1"/><rect x="8" y="10" width="1" height="1"/><rect x="0" y="11" width="1" height="1"/><rect x="1" y="11" width="1" height="1"/><rect x="2" y="11" width="1" height="1"/><rect x="3" y="11" width="1" height="1"/><rect x="5" y="11" width="1" height="1"/><rect x="6" y="11" width="1" height="1"/><rect x="7" y="11" width="1" height="1"/><rect x="8" y="11" width="1" height="1"/><rect x="9" y="11" width="1" height="1"/><rect x="10" y="11" width="1" height="1"/><rect x="11" y="11" width="1" height="1"/><rect x="12" y="11" width="1" height="1"/><rect x="13" y="11" width="1" height="1"/><rect x="0" y="12" width="1" height="1"/><rect x="1" y="12" width="1" height="1"/><rect x="2" y="12" width="1" height="1"/><rect x="3" y="12" width="1" height="1"/><rect x="6" y="12" width="1" height="1"/><rect x="7" y="12" width="1" height="1"/><rect x="8" y="12" width="1" height="1"/><rect x="9" y="12" width="1" height="1"/><rect x="10" y="12" width="1" height="1"/><rect x="0" y="13" width="1" height="1"/><rect x="1" y="13" width="1" height="1"/><rect x="2" y="13" width="1" height="1"/><rect x="3" y="13" width="1" height="1"/><rect x="4" y="13" width="1" height="1"/><rect x="5" y="13" width="1" height="1"/><rect x="6" y="13" width="1" height="1"/><rect x="7" y="13" width="1" height="1"/><rect x="8" y="13" width="1" height="1"/><rect x="9" y="13" width="1" height="1"/><rect x="10" y="13" width="1" height="1"/><rect x="11" y="13" width="1" height="1"/><rect x="12" y="13" width="1" height="1"/><rect x="13" y="13" width="1" height="1"/></g></svg><figcaption><span class="badge ok" aria-hidden="true">✓</span>Scan the square code</figcaption></figure>
+        <figure class="gtile no"><svg viewBox="0 0 53 32" class="gimg wide" aria-hidden="true" shape-rendering="crispEdges"><rect width="53" height="32" fill="var(--paper)"/><g fill="var(--ink)"><rect x="2" y="3" width="2" height="26"/><rect x="5" y="3" width="1" height="26"/><rect x="9" y="3" width="1" height="26"/><rect x="12" y="3" width="1" height="26"/><rect x="14" y="3" width="2" height="26"/><rect x="19" y="3" width="1" height="26"/><rect x="21" y="3" width="2" height="26"/><rect x="24" y="3" width="3" height="26"/><rect x="28" y="3" width="2" height="26"/><rect x="32" y="3" width="1" height="26"/><rect x="34" y="3" width="3" height="26"/><rect x="38" y="3" width="2" height="26"/><rect x="41" y="3" width="1" height="26"/><rect x="44" y="3" width="3" height="26"/><rect x="48" y="3" width="1" height="26"/></g></svg><figcaption><span class="badge bad" aria-hidden="true">✕</span>Not the striped barcode</figcaption></figure>
+      </div>
+      <button class="big" id="startBtn">Start camera</button>
+      <div id="camWrap" class="hidden" style="margin-top:12px">
+        <div id="reader"></div>
+        <div class="camtools">
+          <button class="iconbtn hidden" id="torchBtn">Light</button>
+          <span id="zoomWrap" class="hidden" style="display:flex;flex:1;gap:8px;align-items:center;font-size:13px;color:var(--muted)">Zoom <input type="range" id="zoom"></span>
+          <button class="iconbtn" id="stopBtn">Stop</button>
+        </div>
+        <p class="hint" style="text-align:center">Fit the square code inside the box, about 10–15 cm away. Striped barcodes are ignored.</p>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button class="ghost" id="photoBtn">Scan from photo</button>
+      </div>
+      <input type="file" id="photoInput" accept="image/*" capture="environment" class="hidden">
+    </div>
+  </section>
 
+  <!-- TYPE -->
+  <section id="paneType" class="hidden">
+    <div class="card">
+      <label class="f" for="manual" style="margin-top:0" id="manualLabel">Type the code exactly as printed</label>
+      <input type="text" id="manual" autocomplete="off" autocapitalize="characters" spellcheck="false" readonly inputmode="none" placeholder="e.g. 54099B87">
+      <p class="hint" id="manualHint">For GS1 codes, include the bracketed numbers, e.g. <b>(01)</b>…<b>(10)</b>…. The barcode updates as you type — check it against the label before scanning.</p>
+      <div class="pad" id="pad" aria-label="Keypad"></div>
+      <button class="sample" id="kbToggle" type="button">Use phone keyboard instead</button>
+    </div>
+  </section>
+
+  <div id="msg"></div>
+
+  <!-- RESULT -->
+  <section id="resultWrap" class="hidden">
+    <div class="seg" id="modeSeg">
+      <button id="mLabel" data-p="label">Full label code</button>
+      <button id="mId" data-p="id">ID only</button>
+    </div>
+    <div id="result"><svg id="barcode" preserveAspectRatio="none"></svg><div class="hr" id="hrText"></div></div>
+    <div id="resultMeta"></div>
+    <div class="row" style="margin-top:12px">
+      <button class="big" id="fullBtn">Full screen</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button class="ghost" id="againBtn">Scan next</button>
+    </div>
+    <details id="diag">
+      <summary>What was read from the code</summary>
+      <div class="card" style="margin-top:6px">
+        <div id="fieldsTable"></div>
+        <label class="f">Raw data (␝ = group separator)</label>
+        <code class="raw" id="rawOut"></code>
+      </div>
+    </details>
+  </section>
+
+  <section id="histWrap" class="card hidden" style="margin-top:12px">
+    <div class="shead"><b>This session</b><span class="chip" id="sessCount">0</span></div>
+    <p class="hint" id="sessStarted" style="margin:4px 0 0"></p>
+    <div class="hist" id="hist" style="margin-top:8px"></div>
+    <div class="row" style="margin-top:12px">
+      <button class="big" id="exportBtn">Export list</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button class="ghost" id="newSess">Start new session</button>
+    </div>
+    <p class="hint" id="exportMsg" hidden></p>
+  </section>
+</main>
+
+<!-- FULL SCREEN -->
+<div id="full" class="hidden">
+  <button class="close" id="closeFull">Close ✕</button>
+  <button class="next" id="fullNext">Scan next</button>
+  <div class="inner" id="fullInner"></div>
+</div>
+
+<!-- SETTINGS -->
+<div id="sheet" class="hidden">
+  <div class="panel">
+    <h2>Settings</h2>
+    <p class="hint" style="margin-top:0">Set these once to match the 1D barcode on your labels. Saved on this phone.</p>
+
+    <label class="f" for="sPreset">What the 1D barcode should contain</label>
+    <select id="sPreset">
+      <option value="label">Full label code: (90) + (250) as GS1-128</option>
+      <option value="id">ID only, e.g. 54099B87, as Code 128</option>
+      <option value="custom">Custom (set below)</option>
+    </select>
+    <label class="f" for="sLetters">Letters on the letter pad</label>
+    <input type="text" id="sLetters" autocapitalize="characters" spellcheck="false">
+    <p class="hint">Only the letters your IDs use (A–F by default).</p>
+    <label class="f" for="sIdLen">ID = last how many characters of field (250)</label>
+    <input type="text" id="sIdLen" inputmode="numeric">
+    <div id="customBox">
+    <label class="f" for="sFormat">1D barcode type</label>
+    <select id="sFormat">
+      <option value="GS1-128">GS1-128 (Code 128 with FNC1)</option>
+      <option value="CODE128">Code 128 (plain)</option>
+      <option value="EAN13">EAN-13</option>
+      <option value="UPC">UPC-A</option>
+      <option value="ITF14">ITF-14</option>
+      <option value="CODE39">Code 39</option>
+    </select>
+
+    <label class="f" for="sFields">From a GS1 2D code, put these fields in the 1D code</label>
+    <input type="text" id="sFields" placeholder="Blank = everything">
+    <p class="hint">Bracket numbers (AIs) in order, separated by commas. Leave blank to copy everything. EAN-13 / UPC / ITF-14 always use field 01 (GTIN).</p>
+
+    <label class="chk"><input type="checkbox" id="sIncludeAI"> Include the bracket numbers in plain Code 128 / Code 39</label>
+    </div>
+    <label class="chk"><input type="checkbox" id="sText" checked> Show text under barcode</label>
+    <label class="chk"><input type="checkbox" id="sAutoFull"> Open full screen straight after a scan</label>
+
+
+    <button class="big" id="closeSettings" style="margin-top:20px">Done</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/zxing-wasm@3.1.5/dist/iife/reader/index.js"></script>
 <script>
-/* ============================================================
-   MagKeeper Mobile — working pick + batch stocktake app.
-   Data is held in-memory AND mirrored to localStorage so an
-   unsubmitted session survives closing/reopening (resume).
-   Bluetooth scanner = keyboard wedge: it "types" into the
-   focused field and usually sends Enter — we handle Enter to
-   advance. Batch is filtered out of the raw barcode here.
-   ============================================================ */
+/* Optional: decoder engine embedded in the page (used by the offline/test build) */
+if (window.LR_WASM_B64 && window.ZXingWASM){
+  const bin = Uint8Array.from(atob(window.LR_WASM_B64), c=>c.charCodeAt(0));
+  ZXingWASM.prepareZXingModule({overrides:{wasmBinary: bin.buffer}, fireImmediately:true});
+}
+</script>
+<script>
+/* ================= GS1 parsing ================= */
+const GS = "\x1d", FNC1 = "\xCF";
+// Total length (AI + data) for AIs with a predefined fixed length, keyed by first two digits.
+const FIXED = {"00":20,"01":16,"02":16,"03":16,"04":18,"11":8,"12":8,"13":8,"14":8,"15":8,"16":8,"17":8,"18":8,"19":8,"20":4,
+  "31":10,"32":10,"33":10,"34":10,"35":10,"36":10,"41":16};
+const NAMES = {"00":"SSCC","01":"GTIN","02":"Contained GTIN","10":"Batch / Lot","11":"Production date","12":"Due date",
+  "13":"Packaging date","15":"Best before","16":"Sell by","17":"Expiry","20":"Variant","21":"Serial","22":"Consumer variant",
+  "30":"Count","37":"Count of units","240":"Additional ID","241":"Customer part no.","250":"Secondary serial",
+  "400":"Customer order no.","410":"Ship-to GLN","414":"Location GLN","420":"Ship-to postcode","422":"Country of origin",
+  "90":"Internal","91":"Company internal","92":"Company internal","93":"Company internal","94":"Company internal",
+  "95":"Company internal","96":"Company internal","97":"Company internal","98":"Company internal","99":"Company internal"};
+function aiLen(s){ // number of digits in the AI starting at s
+  const p=s.slice(0,2);
+  if (/^(0[0-4]|1[0-9]|2[0-2]|30|37|9\d)$/.test(p)) return 2;
+  if (/^(2[3-5]|4[0-2]|71)$/.test(p)) return 3;
+  return 4;
+}
+function aiName(ai){
+  if (NAMES[ai]) return NAMES[ai];
+  if (/^310/.test(ai)) return "Net weight (kg)";
+  if (/^3[1-6]/.test(ai)) return "Measure";
+  if (/^39/.test(ai)) return "Amount / price";
+  return "";
+}
+function stripPrefix(raw){
+  let s = String(raw||"");
+  let sym = false;
+  const m = s.match(/^\][A-Za-z]\d/);           // AIM symbology identifier e.g. ]d2 ]C1 ]Q3
+  if (m){ sym = /^\](d2|C1|Q3|e0)$/.test(m[0]); s = s.slice(3); }
+  if (s[0]===GS){ sym = true; s = s.replace(/^\x1d+/,""); }  // leading FNC1
+  return {s, gs1Flag:sym};
+}
+// Parse "(01)0931...(10)ABC" style
+function parseBracketed(s){
+  if (!/^\(\d{2,4}\)/.test(s.trim())) return null;
+  const out=[]; const re=/\((\d{2,4})\)([^(]*)/g; let m;
+  while((m=re.exec(s.trim()))) out.push({ai:m[1], v:m[2].trim()});
+  return out.length?out:null;
+}
+// Parse raw element string with GS separators
+function parseRaw(s){
+  const out=[]; let i=0;
+  while(i<s.length){
+    if (s[i]===GS){ i++; continue; }
+    const rest=s.slice(i);
+    if (!/^\d{2}/.test(rest)) return null;
+    const n=aiLen(rest); const ai=rest.slice(0,n);
+    if (!/^\d+$/.test(ai)) return null;
+    let v;
+    const fixed = FIXED[rest.slice(0,2)];
+    if (fixed){ v = rest.slice(n, fixed); if (v.length!==fixed-n) return null; i += fixed; }
+    else { const e = rest.indexOf(GS); v = e<0 ? rest.slice(n) : rest.slice(n,e); i += n + v.length; }
+    out.push({ai, v});
+  }
+  return out.length?out:null;
+}
+function isFixedAI(ai){ return !!FIXED[ai.slice(0,2)]; }
 
-const STORE_KEY = 'mk6_mobile_session_v1';
-const DEVICE_ID = 'HTML-App';
-const WORKBOOK  = '';            // left blank = any workbook (matches MK6)
-
-let mode = null;                 // 'pick' | 'stk'
-let picks = [];                  // [{seq,label_id,order_id,product,qty_text,actual_batch,na,raw}]
-let counts = [];                 // [{seq,product,actual_batch,raw,full,pieces}]
-let stkFull = true;
-let stkProduct = '';
-let stkMfg = '';
-let recentProducts = [];
-// goods receipt state
-let receipts = [];            // [{seq,product,actual_batch,raw,full,pieces,mfg_date,docket}]
-let grnFull = true;
-let grnProduct = '';
-let grnMfg = '';
-let grnDocket = '';
-
-/* ---------- batch filtering (same rule as MK6) ----------
-   Every batch is either an Orica SAP batch '3000######' or a
-   quarter code like 28MA26Q1. Pull the first match out of the
-   raw barcode; if neither, keep the raw so nothing is lost. */
-function normaliseBatch(raw){
-  const s = String(raw||'').trim();
-  if(!s || s.toUpperCase()==='N/A' || s.toUpperCase()==='NA') return '';
-  let m = s.match(/3000\d{6}/);
-  if(m) return m[0];
-  m = s.toUpperCase().match(/\d{2}[A-Z]{2}\d{2}Q\d/);
-  if(m) return m[0];
-  const parts = s.split(/\s+/);
-  if(parts.length>=2 && parts[1]) return parts[1];   // "SAP BATCH QTY" style
-  return s;                                          // unknown — keep raw for review
+function gtinCheckOk(d){
+  if(!/^\d+$/.test(d)) return false;
+  const digits=d.split("").map(Number); const chk=digits.pop(); let sum=0;
+  digits.reverse().forEach((x,k)=>sum+=x*(k%2===0?3:1));
+  return (10-sum%10)%10===chk;
 }
-/* SAP out of a QR label like MK6|DRAFT|1024257|FULL|Line1 */
-function sapFromLabel(lid){
-  const p = String(lid||'').split('|');
-  for(const x of p){ const t=x.trim(); if(/^\d{6,}$/.test(t)) return t; }
-  return '';
-}
-function orderFromLabel(lid){
-  const p = String(lid||'').split('|');
-  return p.length>=2 ? p[1].trim() : '';
-}
-function qtyFromLabel(lid){
-  const p = String(lid||'').split('|');
-  return p.length>=4 ? p[3].trim() : '';
+function gtinCheckDigit(body){ // body without check digit
+  let sum=0; body.split("").reverse().forEach((c,k)=>sum+=(+c)*(k%2===0?3:1)); return (10-sum%10)%10;
 }
 
-/* ---------- persistence ---------- */
-function persist(){
-  localStorage.setItem(STORE_KEY, JSON.stringify({
-    mode, picks, counts, receipts, recentProducts, stkProduct, stkMfg,
-    grnProduct, grnMfg, grnDocket, ts:Date.now()
-  }));
+/* ============== Turn data into a 1D barcode spec ============== */
+// returns {format, data, text, opts, fields, warn[]} or throws Error
+function buildSpec(input, fromScan){
+  const st = effective(); const warn=[];
+  let {s, gs1Flag} = stripPrefix(input);
+  // Typed codes: what was typed decides. Bracketed line = full label code; anything else = the ID itself.
+  const typedPlain = !fromScan && settings.preset!=="custom" && !parseBracketed(s);
+  if (st.idOnly || typedPlain){
+    let id;
+    if (fromScan || (!typedPlain && parseBracketed(s))){
+      const f = parseBracketed(s) || parseRaw(s) || [];
+      const g = f.find(x=>x.ai==="250");
+      if (!g) throw new Error("This code has no (250) field, so there's no ID to take. Switch to “Full label code”.");
+      id = g.v.slice(-Math.max(1, +st.idLen||8));
+      return {format:"CODE128", data:id, text:id, opts:{}, fields:f, use:[g], warn};
+    }
+    id = s.trim().replace(/^ID\s*:?\s*/i,"").toUpperCase();
+    if (!id) throw new Error("Nothing to encode.");
+    const need = Math.max(1, +st.idLen||8);
+    if (id.length !== need) warn.push(`IDs are ${need} characters. This one has ${id.length}.`);
+    if (/[^\x20-\x7E]/.test(id)) throw new Error("Code 128 can't hold some of these characters.");
+    return {format:"CODE128", data:id, text:id, opts:{}, fields:null, use:null, warn};
+  }
+  let fields = parseBracketed(s);
+  if (!fields && (gs1Flag || s.includes(GS) || st.format==="GS1-128" || fromScan)) {
+    const p = parseRaw(s);
+    // Only trust a raw parse if the code was flagged GS1, had separators, or the first AI is a common one
+    if (p && (gs1Flag || s.includes(GS) || /^(00|01|02)$/.test(p[0].ai))) fields = p;
+  }
+
+  // Filter fields (scan only — typed codes are taken as the full 1D content)
+  let use = fields;
+  if (fields && fromScan && st.fields.trim()){
+    const want = st.fields.split(/[\s,;]+/).filter(Boolean);
+    use = want.map(ai => fields.find(f=>f.ai===ai)).filter(Boolean);
+    const missing = want.filter(ai=>!fields.find(f=>f.ai===ai));
+    if (missing.length) warn.push("Not found in this code: ("+missing.join("), (")+")");
+    if (!use.length) throw new Error("None of the fields set in Settings ("+st.fields+") are in this code.");
+  }
+
+  const f = st.format;
+  const gtinField = fields && fields.find(x=>x.ai==="01"||x.ai==="02");
+  const digitsOnly = s.replace(/\D/g,"");
+
+  if (f==="EAN13"||f==="UPC"||f==="ITF14"){
+    let g = gtinField ? gtinField.v : (/^\d+$/.test(s.trim()) ? s.trim() : null);
+    if (!g) throw new Error("This code has no GTIN (01) for a "+f+" barcode. Check Settings → 1D barcode type.");
+    const want = f==="EAN13"?13 : f==="UPC"?12 : 14;
+    const hasCheck = g.length===want || g.length===14;
+    if (g.length>want){
+      const extra=g.slice(0,g.length-want);
+      if (/^0+$/.test(extra)) g=g.slice(g.length-want);
+      else throw new Error("GTIN "+g+" is too long for "+f+".");
+    } else if (g.length===want-1){ g = g + gtinCheckDigit(g); warn.push("Check digit added automatically."); }
+    else if (g.length<want-1) throw new Error(f+" needs "+want+" digits (got "+g.length+").");
+    if (!gtinCheckOk(g)) throw new Error("Check digit is wrong for "+g+" — re-check the number.");
+    return {format:f, data: f==="ITF14"?g : f==="UPC"?g.slice(0,11):g.slice(0,12), text:g, opts:{}, fields, use, warn};
+  }
+
+  if (f==="GS1-128"){
+    if (!use) throw new Error("This doesn't look like GS1 data. Type it with bracket numbers, e.g. (01)…(10)…, or change the barcode type in Settings.");
+    let data="", text="";
+    use.forEach((x,k)=>{
+      data += x.ai + x.v; text += "("+x.ai+")"+x.v;
+      if (k<use.length-1 && !isFixedAI(x.ai)) data += FNC1;
+    });
+    use.filter(x=>x.ai==="01"&&!gtinCheckOk(x.v)).forEach(()=>warn.push("GTIN check digit looks wrong."));
+    return {format:"CODE128", data, text, opts:{ean128:true}, fields, use, warn};
+  }
+
+  // Plain Code 128 / Code 39
+  let data;
+  if (use && fromScan){
+    data = use.map(x => (st.includeAI?x.ai:"") + x.v).join(st.includeAI && use.length>1 ? GS : "");
+    if (!st.includeAI && use.length>1) warn.push("Several fields joined with nothing between them — set one field in Settings if the 1D only holds one.");
+  } else data = s.replace(/^\s+|\s+$/g,"");
+  if (!data) throw new Error("Nothing to encode.");
+  if (f==="CODE39"){
+    data = data.replace(/\x1d/g,"").toUpperCase();
+    if (!/^[0-9A-Z\-. $\/+%]+$/.test(data)) throw new Error("Code 39 can't hold some of these characters.");
+    return {format:"CODE39", data, text:data, opts:{}, fields, use, warn};
+  }
+  if (/[^\x00-\x7F]/.test(data)) throw new Error("Code 128 can't hold some of these characters.");
+  return {format:"CODE128", data, text:data.replace(/\x1d/g," "), opts:{}, fields, use, warn};
 }
-function loadSession(){
+
+/* ================= UI ================= */
+const $ = id => document.getElementById(id);
+const DEF = {preset:"id", idLen:8, letters:"ABCDEF", format:"GS1-128", fields:"", includeAI:false, text:true, autoFull:true, rotate:"auto"};
+const PRESETS = { label:{format:"GS1-128", fields:"90,250", includeAI:false},
+                  id:{format:"CODE128", fields:"250", includeAI:false, idOnly:true} };
+function effective(){ return settings.preset==="custom" ? Object.assign({}, settings) : Object.assign({}, settings, PRESETS[settings.preset]); }
+let settings = load("lr_settings_v3", DEF);
+let history = load("lr_hist", []);
+function load(k,d){ try{ return Object.assign(Array.isArray(d)?[]:{}, d, JSON.parse(localStorage.getItem(k)||"null")||{}); }catch(e){ return Array.isArray(d)?[]:{...d}; } }
+function save(k,v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+if (!Array.isArray(history)) history = Object.values(history);
+
+let current = null;
+
+function show(msgHtml, cls){ $("msg").innerHTML = msgHtml ? `<div class="${cls||"err"}">${msgHtml}</div>` : ""; }
+function esc(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function vis(s){ return esc(s).replace(/\x1d/g,'<b style="color:var(--accent)">␝</b>'); }
+
+function render(input, fromScan){
+  show("");
+  if (!input){ $("resultWrap").classList.add("hidden"); current=null; return; }
+  let spec;
+  try { spec = buildSpec(input, fromScan); }
+  catch(e){ $("resultWrap").classList.add("hidden"); show(esc(e.message)); current=null; fillDiag(input, null); return; }
+  try {
+    // 1 unit = 1 module; sized to whole screen pixels later so bars stay sharp
+    JsBarcode("#barcode", spec.data, Object.assign({format:spec.format, width:1, height:100, margin:0,
+      displayValue:false, background:"#ffffff", lineColor:"#000000", flat:true}, spec.opts));
+  } catch(e){ $("resultWrap").classList.add("hidden"); show("Couldn't draw that as "+esc(effective().format)+": "+esc(e.message||e)); return; }
+  const svg=$("barcode"); svg.dataset.mods = parseFloat(svg.getAttribute("width"));
+  svg.setAttribute("viewBox", "0 0 "+svg.dataset.mods+" 100");
+  $("hrText").textContent = spec.text; $("hrText").classList.toggle("hidden", !settings.text);
+  current = spec;
+  $("resultWrap").classList.remove("hidden");
+  snap(svg, $("result").clientWidth, 120);
+  const ef = effective().format;
+  const isId = settings.preset!=="custom" && spec.format==="CODE128" && !spec.opts.ean128;
+  const label = isId ? "ID · Code 128" : ef==="UPC"?"UPC-A":ef==="CODE128"?"Code 128":ef==="CODE39"?"Code 39":ef;
+  $("modeSeg").hidden = !fromScan || settings.preset==="custom";
+  $("mLabel").classList.toggle("on", settings.preset==="label"); $("mId").classList.toggle("on", settings.preset==="id");
+  $("resultMeta").textContent = label + " · " + spec.text;
+  if (spec.warn.length) show(spec.warn.map(esc).join("<br>"), "warn");
+  fillDiag(input, spec.fields);
+  return spec;
+}
+
+function fillDiag(raw, fields){
+  $("rawOut").innerHTML = vis(raw);
+  $("fieldsTable").innerHTML = fields ? "<table>"+fields.map(f=>
+      `<tr><td class="ai">(${f.ai})</td><td>${esc(aiName(f.ai))}</td><td class="v">${esc(f.v)}</td></tr>`).join("")+"</table>"
+    : '<p class="hint" style="margin:0">Not GS1 data — the whole code is used as-is.</p>';
+}
+
+/* Size bars to a whole number of screen pixels per module (sharp edges), with a 10-module quiet zone each side */
+function snap(svg, availW, heightCss){
+  const dpr = window.devicePixelRatio || 1, mods = +svg.dataset.mods;
+  const k = Math.max(1, Math.floor(availW * dpr / (mods + 20)));
+  const u = k / dpr;
+  svg.style.width = (mods*u)+"px"; svg.style.height = heightCss+"px";
+  return u;
+}
+/* ---- full screen ---- */
+async function openFull(){
+  if (!current) return;
+  // Same size as the barcode on the main screen (the field scanner reads that size best), centred on white
+  const len = Math.min(innerWidth, 620) - 32;
+  const svg = $("barcode").cloneNode(true); svg.removeAttribute("id");
+  snap(svg, len, 120);
+  const inner = $("fullInner"); inner.innerHTML=""; inner.appendChild(svg);
+  if (settings.text){ const t=document.createElement("div"); t.className="hr"; t.textContent=current.text; t.style.maxWidth=(len-40)+"px"; inner.appendChild(t); }
+  inner.style.transform = "translate(-50%,-50%)";
+  $("full").classList.remove("hidden");
+  try{ if (navigator.wakeLock) wake = await navigator.wakeLock.request("screen"); }catch(e){}
+}
+let wake=null;
+function closeFull(){ $("full").classList.add("hidden"); try{ wake && wake.release(); }catch(e){} wake=null; }
+$("fullBtn").onclick = openFull; $("closeFull").onclick = closeFull;
+$("fullNext").onclick = () => { closeFull(); $("againBtn").click(); };
+// After "Scan next" the label just scanned is usually still in front of the camera,
+// so ignore that same code for a few seconds instead of instantly showing it again.
+let lastScan = {raw:"", until:0};
+addEventListener("resize", ()=>{ if(!$("full").classList.contains("hidden")) openFull(); if(current) snap($("barcode"), $("result").clientWidth, 120); });
+
+/* ---- history (last scans, used to re-show a barcode) ---- */
+function addHist(raw){
+  history = history.filter(h=>h.raw!==raw); history.unshift({raw, t:Date.now()}); history = history.slice(0,15);
+  save("lr_hist", history);
+}
+
+/* ---- session log: one row per label, exported for the manufacturer ---- */
+let session = load("lr_session", {started:0, items:[]});
+if (!Array.isArray(session.items)) session = {started:0, items:[]};
+function fieldsOf(raw){
+  const s = stripPrefix(raw).s; const f = parseBracketed(s) || parseRaw(s) || [];
+  const get = ai => (f.find(x=>x.ai===ai)||{}).v || "";
+  return {f90:get("90"), f250:get("250"), f240:get("240")};
+}
+function logItem({id, raw="", method}){
+  if (!id) return;
+  const now = Date.now(); if (!session.started) session.started = now;
+  const f = raw ? fieldsOf(raw) : {f90:"", f250:"", f240:""};
+  let it = session.items.find(x=>x.id===id);
+  if (it){ it.last = now; it.count++; if (raw && !it.raw){ Object.assign(it, f, {raw}); } if (!it.methods.includes(method)) it.methods.push(method); }
+  else { it = Object.assign({id, raw, methods:[method], first:now, last:now, count:1}, f); session.items.unshift(it); }
+  // newest first
+  session.items.sort((a,b)=>b.last-a.last);
+  save("lr_session", session); drawSession();
+}
+function logScan(raw, method){
+  const f = fieldsOf(raw), n = Math.max(1, +settings.idLen||8);
+  logItem({id: f.f250 ? f.f250.slice(-n) : stripPrefix(raw).s.replace(/\x1d/g," "), raw, method});
+}
+function fmtTime(t){ return new Date(t).toLocaleString([], {day:"numeric", month:"short", hour:"numeric", minute:"2-digit"}); }
+function drawSession(){
+  const n = session.items.length;
+  $("histWrap").classList.toggle("hidden", !n);
+  $("sessCount").textContent = n + (n===1 ? " label" : " labels");
+  $("sessStarted").textContent = session.started ? "Started " + fmtTime(session.started) + ". Tap a label to show its barcode again." : "";
+  $("hist").innerHTML = session.items.map((it,i)=>`<button data-i="${i}"><span class="id">${esc(it.id)}</span><br><small>${esc(it.methods.join(", "))} · ${fmtTime(it.last)}${it.count>1?` · ${it.count}×`:""}</small></button>`).join("");
+}
+$("hist").onclick = e => {
+  const b=e.target.closest("button"); if(!b) return; const it=session.items[+b.dataset.i]; if(!it) return;
+  if (it.raw) render(it.raw, true); else render(it.id, false);
+  scrollTo({top:$("resultWrap").offsetTop-10,behavior:"smooth"});
+};
+let clearArmed = 0;
+$("newSess").onclick = () => {
+  if (Date.now() > clearArmed){
+    clearArmed = Date.now() + 4000;
+    $("newSess").textContent = `Tap again to clear ${session.items.length} labels`;
+    setTimeout(()=>{ if (Date.now() >= clearArmed) $("newSess").textContent = "Start new session"; }, 4100);
+    return;
+  }
+  clearArmed = 0; session = {started:0, items:[]}; save("lr_session", session);
+  $("newSess").textContent = "Start new session"; $("exportMsg").hidden = true; drawSession();
+};
+
+function csvCell(v){ v = String(v==null?"":v); return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g,'""') + '"' : v; }
+function sessionCsv(){
+  const iso = t => { const d=new Date(t), p=x=>String(x).padStart(2,"0"); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; };
+  const head = ["ID","How it was read","First seen","Last seen","Times","Serial (250)","Field (90)","Part no. (240)","Full 2D code data"];
+  const rows = session.items.slice().sort((a,b)=>a.first-b.first).map(it => [it.id, it.methods.join(" + "), iso(it.first), iso(it.last), it.count,
+      it.f250, it.f90, it.f240, it.raw ? stripPrefix(it.raw).s.replace(/\x1d/g," | ") : "(2D code unreadable, ID typed)"]);
+  return "﻿" + [head, ...rows].map(r=>r.map(csvCell).join(",")).join("\r\n") + "\r\n";
+}
+async function exportSession(){
+  if (!session.items.length) return;
+  const d = new Date(), p=x=>String(x).padStart(2,"0");
+  const name = `label-issues-${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}.csv`;
+  const csv = sessionCsv(), n = session.items.length;
+  const msg = t => { $("exportMsg").textContent = t; $("exportMsg").hidden = false; };
+  // 1. Phone share sheet (email, Teams, WhatsApp, Files…)
   try{
-    const raw = localStorage.getItem(STORE_KEY);
-    if(!raw) return null;
-    return JSON.parse(raw);
-  }catch(e){ return null; }
+    const file = new File([csv], name, {type:"text/csv"});
+    if (navigator.canShare && navigator.canShare({files:[file]})){
+      await navigator.share({files:[file], title:"Label issues", text:`${n} labels with unreadable 1D barcodes`});
+      msg(`Shared ${name}.`); return;
+    }
+  }catch(e){ if (e && e.name==="AbortError") return; }
+  // 2. claude.ai test link: ask the viewer to save the file
+  try{
+    const dl = window.claude && window.claude.use ? await window.claude.use("downloads") : null;
+    if (dl){ await dl.save({filename:name, data:csv}); msg(`Saved ${name}.`); return; }
+  }catch(e){ if (e && e.code==="declined") return; }
+  // 3. Plain download
+  try{
+    const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv], {type:"text/csv"})); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove(); msg(`Downloaded ${name}.`);
+  }catch(e){ msg("Couldn't export from this browser."); }
 }
-function clearSession(){
-  localStorage.removeItem(STORE_KEY);
-  picks=[]; counts=[]; receipts=[]; stkProduct=''; grnDocket='';
+$("exportBtn").onclick = exportSession;
+
+/* ---- tabs ---- */
+function tab(which){
+  $("tabScan").classList.toggle("on", which==="scan"); $("tabType").classList.toggle("on", which==="type");
+  $("paneScan").classList.toggle("hidden", which!=="scan"); $("paneType").classList.toggle("hidden", which!=="type");
+  show(""); $("resultWrap").classList.add("hidden"); current=null;
+  if (which==="type"){ stopCam(); render($("manual").value, false); drawPad(); }
+}
+$("tabScan").onclick = ()=>tab("scan"); $("tabType").onclick = ()=>tab("type");
+// A typed code is added to the session once it has stayed complete for 2.5 s,
+// so half-typed or mistyped IDs that get corrected straight away aren't logged.
+let typedTimer = 0;
+function typedChanged(){
+  clearTimeout(typedTimer);
+  const v = $("manual").value, spec = render(v, false);
+  if (!spec) return;
+  const line = stripPrefix(v).s.trim();
+  if (parseBracketed(line)) typedTimer = setTimeout(()=>logScan(line, "Typed"), 2500);
+  else if (spec.text.length === Math.max(1, +settings.idLen||8)) typedTimer = setTimeout(()=>logItem({id: spec.text, method:"Typed"}), 2500);
+}
+$("manual").oninput = typedChanged;
+/* ---- big-button keypad ---- */
+let padMode = "num", kbMode = false;
+function padLetters(){ return (settings.letters||DEF.letters).toUpperCase().replace(/[^A-Z]/g,"").split("").filter((c,i,a)=>a.indexOf(c)===i); }
+function drawPad(){
+  const keys = padMode==="num"
+    ? ["1","2","3","4","5","6","7","8","9",{k:"sw",t:"ABC"},"0",{k:"del",t:"⌫"}]
+    : (()=>{ const L=padLetters(), free=(3 - L.length%3)%3;
+        // fill the last letter row if there's room, otherwise put 123 and a wide delete on their own row
+        return free>=2 ? [...L, {k:"sw",t:"123"}, {k:"del",t:"⌫",span:free-1}] : [...L, {k:"sw",t:"123"}, {k:"del",t:"⌫",span:free===1?3:2}]; })();
+  let html = keys.map(k => typeof k==="string"
+      ? `<button type="button" data-k="${k}">${k}</button>`
+      : `<button type="button" class="fn ${k.k==="sw"?"sw":""}" data-k="${k.k}"${k.span>1?` style="grid-column:span ${k.span}"`:""} aria-label="${k.k==="del"?"Delete":"Switch to "+(padMode==="num"?"letters":"numbers")}">${k.t}</button>`).join("");
+  html += `<button type="button" class="fn" data-k="clr" style="grid-column:1/-1;min-height:52px">Clear</button>`;
+  $("pad").innerHTML = html;
+}
+$("pad").onclick = e => {
+  const b = e.target.closest("button"); if (!b) return;
+  const k = b.dataset.k, m = $("manual");
+  if (k==="sw"){ padMode = padMode==="num" ? "abc" : "num"; drawPad(); return; }
+  if (k==="del") m.value = m.value.slice(0,-1);
+  else if (k==="clr") m.value = "";
+  else m.value += k;
+  try{ navigator.vibrate && navigator.vibrate(10); }catch(_){}
+  typedChanged();
+};
+$("kbToggle").onclick = () => {
+  kbMode = !kbMode; const m=$("manual");
+  m.readOnly = !kbMode; m.inputMode = kbMode ? "text" : "none";
+  $("pad").hidden = kbMode;
+  $("kbToggle").textContent = kbMode ? "Use big keypad instead" : "Use phone keyboard instead";
+  if (kbMode) m.focus(); else m.blur();
+};
+
+/* ---- decoder (zxing-cpp compiled to WebAssembly) ---- */
+const READ_OPTS = {formats:["DataMatrix","QRCode"], tryHarder:true, tryRotate:true, tryInvert:true, textMode:"Plain", maxNumberOfSymbols:1};
+function decoderReady(){ return typeof ZXingWASM !== "undefined"; }
+function resultText(r){
+  // Keep the symbology flag (]d2 / ]Q3 = GS1) so the parser knows the field structure
+  const sid = r.symbologyIdentifier || "";
+  return (/^\](d2|Q3)$/.test(sid) ? sid : "") + r.text;
+}
+async function decode(input, opts){
+  const res = await ZXingWASM.readBarcodes(input, Object.assign({}, READ_OPTS, opts||{}));
+  const hit = res.find(r => r.isValid && r.text);
+  return hit ? resultText(hit) : null;
 }
 
-/* ---------- UI helpers ---------- */
-function toast(msg, kind){
-  const t=document.getElementById('toast');
-  t.textContent=msg; t.className='toast show'+(kind?(' '+kind):'');
-  clearTimeout(t._t); t._t=setTimeout(()=>t.className='toast'+(kind?(' '+kind):''),1900);
+/* ---- clean-up for badly printed codes ----
+   Over-inked labels make the black dots bleed into each other. Re-thresholding the picture
+   (and optionally growing the white gaps by a pixel) often recovers them. The code's own
+   error correction confirms every read, so a clean-up can't produce a wrong ID. */
+// [threshold, grow-white]; ordered by how often each recovered real damaged labels in testing
+const CLEAN = [[70,0],[100,1],[85,0],[130,1],[55,0],[115,1],[100,0],[145,1],[115,0],[85,1],[130,0],[160,1],[145,0],[70,1],[160,0],[175,1],[175,0],[55,1]];
+// code sizes (pixels across) to try the clean-ups at
+const TARGETS = [610, 500, 440, 560, 680, 380, 760];
+function regionOf(r, scale, ox, oy, W, H){
+  const p = r.position; if (!p) return null;
+  const xs=[p.topLeft.x,p.topRight.x,p.bottomLeft.x,p.bottomRight.x].map(x=>ox + x/scale);
+  const ys=[p.topLeft.y,p.topRight.y,p.bottomLeft.y,p.bottomRight.y].map(y=>oy + y/scale);
+  const x0=Math.min(...xs), x1=Math.max(...xs), y0=Math.min(...ys), y1=Math.max(...ys);
+  const code=Math.max(x1-x0, y1-y0), m=code*0.25;
+  if (code < 20) return null;
+  const x=Math.max(0,x0-m), y=Math.max(0,y0-m);
+  return {x, y, w:Math.min(W,x1+m)-x, h:Math.min(H,y1+m)-y, code};
 }
-function esc(s){return String(s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
-
-/* Display a stored YYYY-MM-DD mfg date as DD-Mon-YYYY (e.g. 15-Jan-2026).
-   Storage/date-picker stay numeric; this is display only. */
-function fmtMfg(s){
-  s=String(s||'').trim();
-  const m=s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if(!m) return s;
-  const mon=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const mi=parseInt(m[2],10)-1;
-  if(mi<0||mi>11) return s;
-  return `${m[3]}-${mon[mi]}-${m[1]}`;
+const work = document.createElement("canvas");
+const wctx = work.getContext("2d", {willReadFrequently:true});
+function grab(src, sx, sy, sw, sh, outW, outH){
+  work.width = Math.max(1, Math.round(outW)); work.height = Math.max(1, Math.round(outH));
+  wctx.drawImage(src, sx, sy, sw, sh, 0, 0, work.width, work.height);
+  return wctx.getImageData(0, 0, work.width, work.height);
 }
-
-function showScreen(id){
-  document.querySelectorAll('.screen').forEach(s=>s.classList.add('hidden'));
-  document.getElementById(id).classList.remove('hidden');
-}
-
-/* ---------- mode entry / exit ---------- */
-function openMode(m){
-  mode=m;
-  if(m==='pick'){ showScreen('s-pick'); renderPick(); setTimeout(()=>document.getElementById('pick-label').focus(),250); }
-  else if(m==='stk'){ showScreen('s-stk'); renderStk(); renderRecent(); document.getElementById('stk-product').value=stkProduct; document.getElementById('stk-mfg').value=stkMfg||''; setTimeout(()=>document.getElementById('stk-product').focus(),250); }
-  else { showScreen('s-grn'); renderGrn(); renderGrnRecent(); document.getElementById('grn-docket').value=grnDocket; document.getElementById('grn-product').value=grnProduct; document.getElementById('grn-mfg').value=grnMfg||''; setTimeout(()=>document.getElementById('grn-docket').focus(),250); }
-  persist();
-}
-function leaveMode(){
-  // going back to splash keeps the session (resume), just returns home
-  showScreen('s-splash'); refreshResume(); mode=null; persist();
-}
-
-/* ---------- resume ---------- */
-function refreshResume(){
-  const s=loadSession();
-  const note=document.getElementById('resume-note');
-  const has = s && ((s.picks&&s.picks.length)||(s.counts&&s.counts.length)||(s.receipts&&s.receipts.length));
-  if(!has){ note.style.display='none'; return; }
-  let n, label;
-  if(s.mode==='pick'){ n=s.picks?s.picks.length:0; label='pick'; }
-  else if(s.mode==='stk'){ n=s.counts?s.counts.length:0; label='stocktake'; }
-  else { n=s.receipts?s.receipts.length:0; label='goods receipt'; }
-  document.getElementById('resume-text').innerHTML =
-    `<b>Unsent ${label} held.</b> ${n} box(es) saved on this device — tap to resume.`;
-  note.style.display='flex';
-}
-function resumeHeld(){
-  const s=loadSession(); if(!s) return;
-  picks = s.picks||[]; counts = s.counts||[]; receipts = s.receipts||[];
-  recentProducts = s.recentProducts||[]; stkProduct = s.stkProduct||''; stkMfg = s.stkMfg||'';
-  grnProduct = s.grnProduct||''; grnMfg = s.grnMfg||''; grnDocket = s.grnDocket||'';
-  openMode(s.mode||'pick');
-}
-
-/* ============ PICK ============ */
-function renderPick(){
-  const list=document.getElementById('pick-list');
-  if(!picks.length){ list.innerHTML='<div class="empty">No boxes scanned yet.<br>Scan a QR label, then the box.</div>'; }
-  else{
-    list.innerHTML = picks.slice().reverse().map(p=>`
-      <div class="scanrow">
-        <div class="seq">${p.seq}</div>
-        <div class="info">
-          <div class="prod">${esc(p.product||p.order_id||'—')}</div>
-          <div class="meta">
-            ${p.na?'<span class="qtag part">N/A</span>':`<span class="btag">${esc(p.actual_batch)}</span>`}
-            <span class="qtag full">${esc(p.qty_text||'box')}</span>
-            <span style="color:#aeb4bb">${esc(p.order_id)}</span>
-          </div>
-        </div>
-        <button class="del" onclick="delPick(${p.seq})"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></button>
-      </div>`).join('');
+function variant(img, v){
+  if (!v) return img;
+  const [th, grow] = v, w = img.width, h = img.height, d = img.data;
+  let g = new Uint8ClampedArray(w*h);
+  for (let i=0, j=0; i<g.length; i++, j+=4) g[i] = (d[j]*77 + d[j+1]*150 + d[j+2]*29) >> 8;
+  if (grow){ // 3x3 max filter: widens light areas, thins bled ink
+    const t = new Uint8ClampedArray(w*h);
+    for (let y=0; y<h; y++){ const o=y*w; for (let x=0; x<w; x++){ let m=g[o+x]; if (x>0&&g[o+x-1]>m) m=g[o+x-1]; if (x<w-1&&g[o+x+1]>m) m=g[o+x+1]; t[o+x]=m; } }
+    for (let y=0; y<h; y++){ const o=y*w; for (let x=0; x<w; x++){ let m=t[o+x]; if (y>0&&t[o-w+x]>m) m=t[o-w+x]; if (y<h-1&&t[o+w+x]>m) m=t[o+w+x]; g[o+x]=m; } }
   }
-  document.getElementById('pick-count').textContent=picks.length;
-  document.getElementById('pick-summ').innerHTML = picks.length? `<b>${picks.length} box(es)</b> scanned<br>held on this device` : 'No boxes yet';
-  document.getElementById('pick-submit').disabled = !picks.length;
-  const lbl=document.getElementById('pick-label').value.trim();
-  const box=document.getElementById('pick-box').value.trim();
-  document.getElementById('pick-add').disabled = !(lbl && box);
-  document.getElementById('pick-lbl-state').textContent = lbl? ('SAP '+ (sapFromLabel(lbl)||'—')) : 'waiting';
+  const out = new ImageData(w, h), od = out.data;
+  for (let i=0, j=0; i<g.length; i++, j+=4){ const b = g[i] > th ? 255 : 0; od[j]=od[j+1]=od[j+2]=b; od[j+3]=255; }
+  return out;
 }
-function addPick(){
-  const lblEl=document.getElementById('pick-label'), boxEl=document.getElementById('pick-box');
-  const lbl=lblEl.value.trim(), rawBox=boxEl.value.trim();
-  if(!lbl){ toast('Scan the QR label first','warn'); lblEl.focus(); return; }
-  if(!rawBox){ toast('Scan the box barcode','warn'); boxEl.focus(); return; }
-  const clean = normaliseBatch(rawBox);
-  picks.push({
-    seq: (picks.length? picks[picks.length-1].seq:0)+1,
-    label_id: lbl,
-    order_id: orderFromLabel(lbl),
-    product: sapFromLabel(lbl),
-    qty_text: qtyFromLabel(lbl) || 'box',
-    actual_batch: clean,
-    na: !clean,
-    raw: rawBox
-  });
-  lblEl.value=''; boxEl.value='';
-  persist(); renderPick(); lblEl.focus();
-  toast('Box added','go');
-}
-function delPick(seq){ picks=picks.filter(p=>p.seq!==seq); persist(); renderPick(); }
+const CLEAN_OPTS = {tryInvert:false, tryHarder:true};
 
-/* ============ STOCKTAKE ============ */
-function setFull(f){
-  stkFull=f;
-  document.getElementById('fp-full').classList.toggle('on',f);
-  document.getElementById('fp-part').classList.toggle('on',!f);
-  document.getElementById('piecewrap').classList.toggle('show',!f);
-  if(!f) setTimeout(()=>document.getElementById('stk-pieces').focus(),50);
-  renderStk();
-}
-function renderRecent(){
-  const box=document.getElementById('stk-recent');
-  if(!recentProducts.length){ box.innerHTML=''; return; }
-  box.innerHTML = recentProducts.slice(0,6).map(p=>`<div class="rc" onclick="pickRecent('${esc(p).replace(/'/g,"\\'")}')">${esc(p)}</div>`).join('');
-}
-function pickRecent(p){ document.getElementById('stk-product').value=p; stkProduct=p; renderStk(); document.getElementById('stk-box').focus(); }
-function renderStk(){
-  const list=document.getElementById('stk-list');
-  if(!counts.length){ list.innerHTML='<div class="empty">No boxes counted yet.<br>Type the product, scan a box, mark full or part.</div>'; }
-  else{
-    list.innerHTML = counts.slice().reverse().map(c=>`
-      <div class="scanrow">
-        <div class="seq">${c.seq}</div>
-        <div class="info">
-          <div class="prod">${esc(c.product)}</div>
-          <div class="meta">
-            <span class="btag">${esc(c.actual_batch)}</span>
-            ${c.full?'<span class="qtag full">FULL</span>':`<span class="qtag part">${esc(c.pieces)} pc</span>`}
-            ${c.mfg_date?`<span style="color:#8a8f96">mfg ${esc(fmtMfg(c.mfg_date))}</span>`:''}
-          </div>
-        </div>
-        <button class="del" onclick="delStk(${c.seq})"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></button>
-      </div>`).join('');
+/* ---- camera ---- */
+let stream=null, running=false, torchOn=false, busy=false, tick=0, camRegion=null, camSeen=-99, cleanIdx=0;
+const video = document.createElement("video");
+video.setAttribute("playsinline",""); video.muted=true;
+video.style.cssText="width:100%;height:100%;object-fit:cover;display:block";
+
+async function startCam(){
+  if (!decoderReady()){ show("Scanner didn't load — check your internet connection and reload."); return; }
+  show(""); $("resultWrap").classList.add("hidden"); current=null;
+  $("camWrap").classList.remove("hidden"); $("startBtn").classList.add("hidden");
+  const r=$("reader"); if (!r.contains(video)){ r.style.position="relative"; r.appendChild(video);
+    const box=document.createElement("div"); box.id="aim";
+    box.style.cssText="position:absolute;inset:14%;border:3px solid var(--accent);border-radius:10px;box-shadow:0 0 0 2000px rgba(0,0,0,.25);pointer-events:none";
+    r.appendChild(box); r.style.overflow="hidden"; }
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({audio:false, video:{facingMode:{ideal:"environment"}, width:{ideal:1920}, height:{ideal:1080}}});
+    video.srcObject = stream; await video.play();
+    const track = stream.getVideoTracks()[0];
+    try{ await track.applyConstraints({advanced:[{focusMode:"continuous"}]}); }catch(e){}
+    camRegion=null; cleanIdx=0; running = true; setupCamTools(track); loop();
+  }catch(e){
+    stopCam();
+    show("Couldn't open the camera. Allow camera access for this site in your browser settings, then try again. ("+esc(e.message||e)+")");
   }
-  document.getElementById('stk-count').textContent=counts.length;
-  document.getElementById('stk-summ').innerHTML = counts.length? `<b>${counts.length} box(es)</b> counted<br>held on this device` : 'No boxes yet';
-  document.getElementById('stk-submit').disabled = !counts.length;
-  const prod=document.getElementById('stk-product').value.trim();
-  const box=document.getElementById('stk-box').value.trim();
-  const piecesOk = stkFull || (parseInt(document.getElementById('stk-pieces').value,10)>0);
-  document.getElementById('stk-add').disabled = !(prod && box && piecesOk);
 }
-function addStk(){
-  const prodEl=document.getElementById('stk-product'), boxEl=document.getElementById('stk-box'), pcEl=document.getElementById('stk-pieces'), mfgEl=document.getElementById('stk-mfg');
-  const prod=prodEl.value.trim(), rawBox=boxEl.value.trim();
-  if(!prod){ toast('Type the product first','warn'); prodEl.focus(); return; }
-  if(!rawBox){ toast('Scan the box barcode','warn'); boxEl.focus(); return; }
-  let pieces=0;
-  if(!stkFull){
-    pieces=parseInt(pcEl.value,10)||0;
-    if(pieces<=0){ toast('Enter the piece count','warn'); pcEl.focus(); return; }
+async function loop(){
+  if (!running) return;
+  if (!busy && video.videoWidth){
+    busy = true;
+    try{
+      const vw=video.videoWidth, vh=video.videoHeight;
+      // 1. Read what's visible in the square window as-is. If a code is seen but can't be read,
+      //    remember where it is.
+      const side=Math.min(vw,vh), sx=(vw-side)/2, sy=(vh-side)/2, size=Math.min(side,1280), sc=size/side;
+      const res = await ZXingWASM.readBarcodes(grab(video, sx, sy, side, side, size, size),
+        Object.assign({}, READ_OPTS, {returnErrors:true}));
+      let text = null;
+      for (const r of res){
+        if (r.isValid && r.text){ text = resultText(r); break; }
+        const reg = regionOf(r, sc, sx, sy, vw, vh); if (reg){ camRegion = reg; camSeen = tick; }
+      }
+      tick++;
+      // 2. Badly printed code: try a few clean-ups on that spot in this frame
+      if (!text && camRegion && tick - camSeen < 15){
+        // small random shifts and size changes: damaged codes read on some samplings and not others
+        const g = camRegion, j = () => (Math.random()-0.5) * g.code * 0.02;
+        const target = TARGETS[Math.floor(cleanIdx/CLEAN.length) % TARGETS.length] * (0.96 + Math.random()*0.08);
+        const k = Math.min(2, target/g.code);
+        const base = grab(video, g.x + j(), g.y + j(), g.w, g.h, g.w*k, g.h*k);
+        for (let i=0; i<6 && !text && running; i++){
+          text = await decode(variant(base, CLEAN[cleanIdx % CLEAN.length]), CLEAN_OPTS);
+          cleanIdx++;
+        }
+      }
+      if (text && text === lastScan.raw && Date.now() < lastScan.until){
+        text = null; show("That's the label you just scanned. Point the camera at the next one.","warn");
+      }
+      if (text && running){ busy=false; return onScan(text); }
+    }catch(e){}
+    busy = false;
   }
-  const clean=normaliseBatch(rawBox);
-  const mfg=mfgEl.value||'';   // yyyy-mm-dd (native date input) or blank
-  counts.push({
-    seq:(counts.length? counts[counts.length-1].seq:0)+1,
-    product:prod, actual_batch:clean, raw:rawBox,
-    full:stkFull, pieces: stkFull? null : pieces,
-    mfg_date: mfg
-  });
-  // product + mfg date stick; remember product as recent
-  stkProduct=prod;
-  stkMfg=mfg;
-  if(!recentProducts.includes(prod)){ recentProducts.unshift(prod); recentProducts=recentProducts.slice(0,8); }
-  boxEl.value=''; pcEl.value='';
-  // reset to Full for the next box (common case), keep product + mfg date
-  setFull(true);
-  persist(); renderStk(); renderRecent(); boxEl.focus();
-  toast('Box counted','go');
+  setTimeout(loop, 60);
 }
-function delStk(seq){ counts=counts.filter(c=>c.seq!==seq); persist(); renderStk(); }
+function setupCamTools(track){
+  let caps={}; try{ caps = track.getCapabilities ? track.getCapabilities() : {}; }catch(e){}
+  $("torchBtn").classList.toggle("hidden", !caps.torch);
+  if (caps.zoom){
+    const z=$("zoom"); z.min=caps.zoom.min; z.max=caps.zoom.max; z.step=caps.zoom.step||0.1; z.value=caps.zoom.min;
+    $("zoomWrap").classList.remove("hidden");
+  } else $("zoomWrap").classList.add("hidden");
+}
+function track(){ return stream && stream.getVideoTracks()[0]; }
+$("zoom").oninput = e => { try{ track().applyConstraints({advanced:[{zoom:+e.target.value}]}); }catch(_){} };
+$("torchBtn").onclick = ()=>{ torchOn=!torchOn; try{ track().applyConstraints({advanced:[{torch:torchOn}]}); }catch(_){} };
+function stopCam(){
+  running=false; torchOn=false;
+  if (stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }
+  video.srcObject=null;
+  $("camWrap").classList.add("hidden"); $("startBtn").classList.remove("hidden");
+}
+function onScan(text){
+  lastScan = {raw:text, until:0};
+  try{ navigator.vibrate && navigator.vibrate(80); }catch(e){}
+  stopCam();
+  handleDecoded(text, "Camera");
+}
+function handleDecoded(text, method){
+  addHist(text); logScan(text, method || "Camera");
+  const ok = render(text, true);
+  if (ok && settings.autoFull) openFull();
+  else scrollTo({top:$("resultWrap").offsetTop-10, behavior:"smooth"});
+}
+$("startBtn").onclick = startCam; $("stopBtn").onclick = stopCam;
+$("againBtn").onclick = ()=>{ if ($("paneType").classList.contains("hidden")) {
+    if (window.LR_TEST){ $("photoInput").click(); return; }   // test link: no live camera
+    lastScan.until = Date.now() + 5000; scrollTo({top:0,behavior:"smooth"}); startCam(); } else { $("manual").value=""; render("",false); padMode="num"; drawPad(); scrollTo({top:0,behavior:"smooth"}); } };
+document.addEventListener("visibilitychange", ()=>{ if (document.hidden && running) stopCam(); });
 
-/* ============ GOODS RECEIPT ============ */
-function setGrnFull(f){
-  grnFull=f;
-  document.getElementById('grnfp-full').classList.toggle('on',f);
-  document.getElementById('grnfp-part').classList.toggle('on',!f);
-  document.getElementById('grn-piecewrap').classList.toggle('show',!f);
-  if(!f) setTimeout(()=>document.getElementById('grn-pieces').focus(),50);
-  renderGrn();
-}
-function renderGrnRecent(){
-  const box=document.getElementById('grn-recent');
-  if(!recentProducts.length){ box.innerHTML=''; return; }
-  box.innerHTML = recentProducts.slice(0,6).map(p=>`<div class="rc" onclick="pickGrnRecent('${esc(p).replace(/'/g,"\\'")}')">${esc(p)}</div>`).join('');
-}
-function pickGrnRecent(p){ document.getElementById('grn-product').value=p; grnProduct=p; renderGrn(); document.getElementById('grn-box').focus(); }
-function renderGrn(){
-  const list=document.getElementById('grn-list');
-  if(!receipts.length){ list.innerHTML='<div class="empty">No boxes received yet.<br>Enter the docket, type the product, scan each box.</div>'; }
-  else{
-    list.innerHTML = receipts.slice().reverse().map(c=>`
-      <div class="scanrow">
-        <div class="seq">${c.seq}</div>
-        <div class="info">
-          <div class="prod">${esc(c.product)}</div>
-          <div class="meta">
-            <span class="btag">${esc(c.actual_batch)}</span>
-            ${c.full?'<span class="qtag full">FULL</span>':`<span class="qtag part">${esc(c.pieces)} pc</span>`}
-            ${c.mfg_date?`<span style="color:#8a8f96">mfg ${esc(fmtMfg(c.mfg_date))}</span>`:''}
-            ${c.docket?`<span style="color:#8a8f96">dkt ${esc(c.docket)}</span>`:''}
-          </div>
-        </div>
-        <button class="del" onclick="delGrn(${c.seq})"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></button>
-      </div>`).join('');
+/* ---- photo ---- */
+$("photoBtn").onclick = ()=>$("photoInput").click();
+$("photoInput").onchange = async e => {
+  const file = e.target.files[0]; e.target.value=""; if(!file) return;
+  if (!decoderReady()){ show("Scanner didn't load — check your internet connection and reload."); return; }
+  stopCam(); show("Reading photo…","warn");
+  try{
+    const text = await decodePhoto(file);
+    if (!text) throw 0;
+    show(""); handleDecoded(text, "Photo");
+  } catch(err){ show("Couldn't read the square code in that photo. Flatten the label, avoid glare and get close so the code fills a good part of the picture. If it's badly printed, type the ID instead."); }
+};
+async function decodePhoto(file){
+  // 1. Straight read
+  const quick = await decode(file); if (quick) return quick;
+  const img = await new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=rej; i.src=URL.createObjectURL(file); });
+  const W = img.naturalWidth, H = img.naturalHeight;
+  // 2. Find where the code is, even if it can't be read yet
+  const ds = Math.min(1, 1400/Math.max(W,H));
+  const found = await ZXingWASM.readBarcodes(grab(img,0,0,W,H,W*ds,H*ds), Object.assign({}, READ_OPTS, {returnErrors:true, maxNumberOfSymbols:4}));
+  const regions = [];
+  for (const r of found){
+    if (r.isValid && r.text) return resultText(r);
+    const reg = regionOf(r, ds, 0, 0, W, H); if (reg) regions.push(reg);
   }
-  document.getElementById('grn-count').textContent=receipts.length;
-  document.getElementById('grn-summ').innerHTML = receipts.length? `<b>${receipts.length} box(es)</b> received<br>held on this device` : 'No boxes yet';
-  document.getElementById('grn-submit').disabled = !receipts.length;
-  const dkt=document.getElementById('grn-docket').value.trim();
-  const prod=document.getElementById('grn-product').value.trim();
-  const box=document.getElementById('grn-box').value.trim();
-  const piecesOk = grnFull || (parseInt(document.getElementById('grn-pieces').value,10)>0);
-  document.getElementById('grn-add').disabled = !(dkt && prod && box && piecesOk);
-}
-function addGrn(){
-  const dktEl=document.getElementById('grn-docket'), prodEl=document.getElementById('grn-product'),
-        boxEl=document.getElementById('grn-box'), pcEl=document.getElementById('grn-pieces'), mfgEl=document.getElementById('grn-mfg');
-  const dkt=dktEl.value.trim(), prod=prodEl.value.trim(), rawBox=boxEl.value.trim();
-  if(!dkt){ toast('Enter the delivery docket first','warn'); dktEl.focus(); return; }
-  if(!prod){ toast('Type the product first','warn'); prodEl.focus(); return; }
-  if(!rawBox){ toast('Scan the box barcode','warn'); boxEl.focus(); return; }
-  let pieces=0;
-  if(!grnFull){
-    pieces=parseInt(pcEl.value,10)||0;
-    if(pieces<=0){ toast('Enter the piece count','warn'); pcEl.focus(); return; }
+  // Ignore specks the detector mistakes for a code, and always try centre crops too,
+  // guessing the code fills ~40% of each
+  for (let i=regions.length-1; i>=0; i--) if (regions[i].code < Math.min(W,H)*0.06) regions.splice(i,1);
+  for (const f of [1, 0.6, 0.35]){ const w=W*f, h=H*f; regions.push({x:(W-w)/2, y:(H-h)/2, w, h, code:Math.min(w,h)*0.4}); }
+  show("Reading photo… this code is badly printed, trying harder","warn");
+  // 3. Try clean-ups at a few sizes; later rounds shift the sampling slightly
+  const stopAt = performance.now() + 12000;
+  for (let round=0; round<3; round++){
+    for (const reg of regions){
+      for (const target0 of TARGETS){
+        const j = () => round ? (Math.random()-0.5) * reg.code * 0.02 : 0;
+        const target = target0 * (round ? 0.96 + Math.random()*0.08 : 1);
+        const k = Math.min(2, target/reg.code);
+        const base = grab(img, reg.x + j(), reg.y + j(), reg.w, reg.h, reg.w*k, reg.h*k);
+        for (const v of CLEAN){
+          const t = await decode(variant(base, v), CLEAN_OPTS);
+          if (t) return t;
+        }
+        if (performance.now() > stopAt) return null;
+      }
+    }
   }
-  const clean=normaliseBatch(rawBox);
-  const mfg=mfgEl.value||'';
-  receipts.push({
-    seq:(receipts.length? receipts[receipts.length-1].seq:0)+1,
-    product:prod, actual_batch:clean, raw:rawBox,
-    full:grnFull, pieces: grnFull? null : pieces,
-    mfg_date:mfg, docket:dkt
-  });
-  // docket + product + mfg stick
-  grnDocket=dkt; grnProduct=prod; grnMfg=mfg;
-  if(!recentProducts.includes(prod)){ recentProducts.unshift(prod); recentProducts=recentProducts.slice(0,8); }
-  boxEl.value=''; pcEl.value='';
-  setGrnFull(true);
-  persist(); renderGrn(); renderGrnRecent(); boxEl.focus();
-  toast('Box received','go');
-}
-function delGrn(seq){ receipts=receipts.filter(c=>c.seq!==seq); persist(); renderGrn(); }
-
-/* ============ SUBMIT ============ */
-function submitMode(){
-  const n = mode==='pick'? picks.length : (mode==='stk'? counts.length : receipts.length);
-  if(!n) return;
-  const label = mode==='pick'?'pick':(mode==='stk'?'stocktake':'goods receipt');
-  showModal(
-    'Submit '+label+'?',
-    `This creates a file with <b>${n} box(es)</b> for MagKeeper to import at the plant. The held session will be cleared.`,
-    'Submit', 'go', ()=>doSubmit(mode)
-  );
-}
-function doSubmit(m){
-  const now=new Date().toISOString();
-  let payload, fname;
-  if(m==='pick'){
-    payload={
-      schema_version:'1.0', kind:'mk6_pick_result',
-      submitted_at:now, device_id:DEVICE_ID, workbook:WORKBOOK,
-      picks: picks.map(p=>({
-        seq:p.seq, label_id:p.label_id, order_id:p.order_id,
-        product:p.product, qty_text:p.qty_text,
-        actual_batch:p.actual_batch, na:p.na, raw_barcode:p.raw
-      }))
-    };
-    fname='MK6_pick_READY.json';
-  }else if(m==='stk'){
-    payload={
-      schema_version:'1.0', kind:'mk6_stocktake_result',
-      submitted_at:now, device_id:DEVICE_ID, workbook:WORKBOOK,
-      counts: counts.map(c=>({
-        seq:c.seq, product:c.product, actual_batch:c.actual_batch,
-        full:c.full, pieces:c.pieces, mfg_date:c.mfg_date||'', raw_barcode:c.raw
-      }))
-    };
-    fname='MK6_stocktake_READY.json';
-  }else{
-    payload={
-      schema_version:'1.0', kind:'mk6_goods_receipt',
-      submitted_at:now, device_id:DEVICE_ID, workbook:WORKBOOK,
-      receipts: receipts.map(c=>({
-        seq:c.seq, docket:c.docket, product:c.product, actual_batch:c.actual_batch,
-        full:c.full, pieces:c.pieces, mfg_date:c.mfg_date||'', raw_barcode:c.raw
-      }))
-    };
-    fname='MK6_goods_receipt_READY.json';
-  }
-  downloadJSON(payload, fname);
-  clearSession();
-  toast('Submitted — file saved','go');
-  setTimeout(()=>{ leaveMode(); }, 700);
-}
-function downloadJSON(obj, filename){
-  const blob=new Blob([JSON.stringify(obj,null,2)],{type:'application/json'});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement('a'); a.href=url; a.download=filename;
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  setTimeout(()=>URL.revokeObjectURL(url),1500);
+  return null;
 }
 
-/* ============ modal ============ */
-function showModal(title, html, okLabel, okClass, onOk){
-  const m=document.getElementById('modal');
-  m.innerHTML=`<h3>${title}</h3><p>${html}</p><div class="mrow">
-    <button class="cancel" onclick="closeModal()">Cancel</button>
-    <button class="${okClass==='danger'?'danger':'ok'}" id="modal-ok">${okLabel}</button></div>`;
-  document.getElementById('modal-bg').classList.add('show');
-  document.getElementById('modal-ok').onclick=()=>{ closeModal(); onOk&&onOk(); };
+/* ---- settings ---- */
+function syncPreset(){ $("customBox").hidden = $("sPreset").value!=="custom"; }
+$("sPreset").onchange = syncPreset;
+function openSettings(){
+  $("sLetters").value=settings.letters||DEF.letters;
+  $("sPreset").value=settings.preset; $("sIdLen").value=settings.idLen; syncPreset();
+  $("sFormat").value=settings.format; $("sFields").value=settings.fields; $("sIncludeAI").checked=settings.includeAI;
+  $("sText").checked=settings.text; $("sAutoFull").checked=settings.autoFull;
+  $("sheet").classList.remove("hidden");
 }
-function closeModal(){ document.getElementById('modal-bg').classList.remove('show'); }
-
-/* ============ scanner (keyboard-wedge) handling ============
-   A Bluetooth scanner types the code then usually sends Enter.
-   On Enter in the label field → jump to box; in the box field →
-   add the row automatically (fast repeat scanning). */
-function wireEnter(){
-  const pl=document.getElementById('pick-label'), pb=document.getElementById('pick-box');
-  pl.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); renderPick(); pb.focus(); }});
-  pl.addEventListener('input',renderPick);
-  pb.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); if(pl.value.trim()&&pb.value.trim()) addPick(); }});
-  pb.addEventListener('input',renderPick);
-
-  const sp=document.getElementById('stk-product'), sb=document.getElementById('stk-box'), pc=document.getElementById('stk-pieces');
-  sp.addEventListener('input',()=>{ stkProduct=sp.value; renderStk(); });
-  sp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); sb.focus(); }});
-  sb.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault();
-    // full box → add immediately; part box → go to pieces
-    if(stkFull){ if(sp.value.trim()&&sb.value.trim()) addStk(); }
-    else { pc.focus(); }
-  }});
-  sb.addEventListener('input',renderStk);
-  pc.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); if(!document.getElementById('stk-add').disabled) addStk(); }});
-  pc.addEventListener('input',renderStk);
-
-  // goods receipt
-  const gd=document.getElementById('grn-docket'), gp=document.getElementById('grn-product'),
-        gb=document.getElementById('grn-box'), gpc=document.getElementById('grn-pieces'), gm=document.getElementById('grn-mfg');
-  gd.addEventListener('input',()=>{ grnDocket=gd.value; renderGrn(); });
-  gd.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); gp.focus(); }});
-  gp.addEventListener('input',()=>{ grnProduct=gp.value; renderGrn(); });
-  gp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); gb.focus(); }});
-  gb.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault();
-    if(grnFull){ if(gd.value.trim()&&gp.value.trim()&&gb.value.trim()) addGrn(); }
-    else { gpc.focus(); }
-  }});
-  gb.addEventListener('input',renderGrn);
-  gm.addEventListener('input',()=>{ grnMfg=gm.value; });
-  gpc.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); if(!document.getElementById('grn-add').disabled) addGrn(); }});
-  gpc.addEventListener('input',renderGrn);
+function closeSettings(){
+  settings = {letters:($("sLetters").value.toUpperCase().replace(/[^A-Z]/g,"")||DEF.letters), preset:$("sPreset").value, idLen:Math.max(1, parseInt($("sIdLen").value,10)||8), format:$("sFormat").value, fields:$("sFields").value.trim(), includeAI:$("sIncludeAI").checked,
+    text:$("sText").checked, autoFull:$("sAutoFull").checked};
+  save("lr_settings_v3", settings); $("sheet").classList.add("hidden"); drawPad();
+  rerender();
 }
+function rerender(){
+  if (!$("paneType").classList.contains("hidden")) render($("manual").value,false);
+  else if (history[0] && !$("resultWrap").classList.contains("hidden")) render(history[0].raw,true);
+}
+$("openSettings").onclick=openSettings; $("closeSettings").onclick=closeSettings;
+$("sheet").onclick = e => { if (e.target.id==="sheet") closeSettings(); };
 
-/* ============ boot ============ */
-window.addEventListener('DOMContentLoaded',()=>{
-  wireEnter();
-  const s=loadSession();
-  if(s){ recentProducts=s.recentProducts||[]; stkProduct=s.stkProduct||''; stkMfg=s.stkMfg||''; grnProduct=s.grnProduct||''; grnMfg=s.grnMfg||''; grnDocket=s.grnDocket||''; }
-  refreshResume();
-});
+$("modeSeg").onclick = e => { const b=e.target.closest("button"); if(!b) return;
+  settings.preset=b.dataset.p; save("lr_settings_v3", settings); rerender(); updateTypeHint(); };
+function updateTypeHint(){
+  $("manualLabel").textContent = "Type the ID printed under the barcode";
+  $("manual").placeholder = "e.g. 54099B87";
+  $("manualHint").innerHTML = "Just the characters after <b>ID:</b>. Tap <b>ABC</b> for letters and <b>123</b> for numbers. Check the barcode against the label before scanning.";
+}
+$("tabType").addEventListener("click", updateTypeHint);
+updateTypeHint();
+
+/* Test build (claude.ai link): live camera is blocked there, so lead with photos */
+if (window.LR_TEST){
+  $("startBtn").hidden = true;
+  $("photoBtn").className = "big"; $("photoBtn").textContent = "Take or choose a photo";
+  const n=document.createElement("p"); n.className="hint";
+  n.textContent="Test version: live camera only works on the GitHub version. Take a close, sharp photo of the square code instead.";
+  $("photoBtn").parentNode.after(n);
+  const t=document.createElement("button"); t.className="sample"; t.textContent="Try with the example label";
+  t.onclick=()=>{ tab("scan"); handleDecoded("90SE018\x1d250700012654099B87\x1d2401035123\x1d301\x1d371\x1d2000", "Example"); };
+  n.after(t);
+}
+drawPad();
+drawSession();
 </script>
 </body>
 </html>
