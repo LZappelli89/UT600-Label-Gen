@@ -1,77 +1,154 @@
-# MagKeeper Pro 6 — Mobile
+# Label Rescan
 
-A single-page field companion for **MagKeeper Pro 6**. It runs in a phone browser
-(no install), reads a data file MK6 writes into your shared folder, and produces
-a pick file MK6 reads back. Built to be hosted on GitHub Pages, exactly like the
-MK5 mobile app.
+A phone web app that turns the **2D Data Matrix** code on a label into a **1D barcode** on the phone screen, so a 1D-only field scanner can scan it.
 
-## What it does
+It was built for labels whose 1D barcode printed badly while the square 2D code next to it is still readable. Instead of keying long codes into the field scanner by hand, staff scan the square code with their phone and hold the phone's screen up to the field scanner.
 
-Two sections, reached from the home screen:
+The whole app is one file, `index.html`. There is nothing to install and no server or database.
 
-1. **Stock Levels** — current on-hand by product and magazine, straight from the
-   MK6 data file. Read-only; MK6 keeps the file current (on open, and on close).
-2. **Pick** — scan each box's QR label, then its batch barcode. The QR tells the
-   app exactly what it's looking for (a full box, or a part-box piece count) and
-   shows it after the first scan. When you're done, review and submit — the app
-   writes `MK6_pick_READY.json`, which you drop into your OneDrive folder so MK6
-   picks it up next time it opens.
+---
 
-Works with a **Bluetooth scanner** (recommended — it types the code and Enter) or
-the phone **camera** (where the browser supports `BarcodeDetector`).
+## Features
 
-## The round-trip
+- **Live camera scanning.** Point the phone at the square code and it is read automatically, with no shutter button. A small camera window shows a guide: scan the square code (green tick), not the striped barcode (red cross).
+- **Reads damaged codes.** Smudged, creased, curled and over-inked 2D codes are repaired using the code's own error correction. A result is only accepted when it passes that check with capacity to spare, so a damaged code gives the right ID or nothing.
+- **Progress bar.** It shows when the app is looking for a code, when it has found one and is repairing it, and when to straighten the label or enter the ID by hand.
+- **Scan from photo.** A fallback for codes that are hard to read live.
+- **Manual entry.** For labels where the 2D code is also unreadable:
+  - big-button **number pad** and **letter pad** (letters A–F by default)
+  - **voice entry**: tap *Say the ID* and read it out
+  - the phone keyboard, as a last resort
+- **Full-screen barcode** for the field scanner, with **Scan next** to go straight back to the camera.
+- **Session list and export.** Every label handled is listed with its full 2D code data, date and time, and how it was read (Camera, Photo, Typed or Voice). **Export list** creates a CSV file to send to the manufacturer showing which items had misprinted barcodes.
+- **Auto / Light / Dark** colour theme.
+
+---
+
+## Using the app
+
+### Scan a label
+
+1. Tap **Start camera**. Allow camera access the first time.
+2. Fit the **square code** inside the box, about 10–15 cm away.
+3. The ID barcode opens full screen. Scan it with the field scanner.
+4. Tap **Scan next** for the next label.
+
+If the bar fills and says *Very hard to read*, flatten the label, avoid glare and hold steady. If that doesn't work, enter the ID by hand.
+
+### Enter an ID by hand
+
+Open the **Type code** tab and enter the characters printed after **ID:** on the label (8 characters, for example `54099B87`).
+
+- **Keypad:** tap **ABC** for letters and **123** for numbers.
+- **Voice:** tap **Say the ID** and read each character. Use the phonetic alphabet for letters, because B, C, D and E sound alike:
+
+  | Letter | Say |
+  |---|---|
+  | A | Alpha |
+  | B | Bravo |
+  | C | Charlie |
+  | D | Delta |
+  | E | Echo |
+  | F | Foxtrot |
+
+  For example: *"five four zero nine nine Bravo eight seven"*. "Double nine" and "oh" for zero also work. The app stops listening once the ID is complete.
+
+Always check the ID on screen against the label before scanning.
+
+### Export the session
+
+At the bottom of the main screen, **This session** lists every label handled. Tap a row to show its barcode again.
+
+- **Export list** creates a CSV file (opens in Excel), with one row per label: ID, how it was read, first and last seen, number of times, serial (250), field (90), part number (240), and the full 2D code data. Labels where the 2D code couldn't be read are marked *2D code unreadable, ID entered by hand*.
+- **Start new session** clears the list. It asks you to tap twice to confirm.
+
+The session is stored on the phone only. Export it before clearing, changing phones or clearing browser data.
+
+---
+
+## Setting up on GitHub Pages
+
+1. Create a repository, for example `label-rescan`, and set it to **Public**.
+2. Upload `index.html` (and this `README.md`) to the root of the repository.
+3. Go to **Settings → Pages → Source: Deploy from a branch**, branch `main`, folder `/ (root)`, and tap **Save**.
+4. After a minute or two the app is live at `https://<your-username>.github.io/label-rescan/`.
+5. On each phone, open the link and **Add to Home Screen** so it opens like an app.
+
+The camera and microphone only work over **https**, which GitHub Pages provides.
+
+### Updating
+
+Upload the new `index.html` over the old one and **Commit changes**. The version shows at the bottom of the main screen (for example *Label Rescan · 9 Oct 2026 · v18*). If a phone still shows the old version after a few minutes, fully close the app and reopen it, or add `?v=18` to the end of the link.
+
+---
+
+## Settings (⚙)
+
+| Setting | Default | Notes |
+|---|---|---|
+| What the 1D barcode should contain | ID only (Code 128) | Or the full label code (fields 90 + 250) as GS1-128, or a custom setup |
+| Letters on the letter pad | A–F | Only the letters your IDs use |
+| ID = last how many characters of field (250) | 8 | |
+| Show text under barcode | On | |
+| Open full screen straight after a scan | On | |
+| Colour theme | Auto | Also on the main screen |
+
+Settings are saved on each phone.
+
+---
+
+## Label format
+
+The app expects the 2D code to hold GS1 data like this:
 
 ```
-MK6 (desktop)  ──writes──▶  MK6_mobile_data.json  ──OneDrive──▶  phone app (reads)
-                                                                      │
-phone app  ──writes──▶  MK6_pick_READY.json  ──OneDrive──▶  MK6 (detects on open)
-                                                                      │
-                              MK6 fills the matching pending order lines,
-                              renames the file *_IMPORTED.json, and you open
-                              each order and press "Pick" to confirm & transfer.
+(90)SE018 (250)7000126xxxxxxxx (240)10351xx (30)1 (37)1 (20)00
 ```
 
-The join key is the QR **label id**: `MK6|<order>|L<line>|B<box>|<sap>|<batch>` —
-the same id printed on each physical box label, so every scan lands on the right
-line with no pick list to generate first.
+- **ID** = the last 8 characters of field **(250)**.
+- The 1D barcode printed on the label holds **(90)** + **(250)**, shown in the app as the *Full label code* option.
 
-## Files
+The damaged-code repair uses this layout. It knows which parts of the code never change, so it can spend all of the error correction on the parts that do. If the manufacturer changes the layout, scanning still works using the standard decoders, but heavily damaged codes are less likely to read. The app needs updating for the new layout to get that strength back.
 
-| File | What it is |
+---
+
+## Privacy and data
+
+- Scanning, decoding and barcode generation all happen **on the phone**. No label data is sent anywhere.
+- The session list and settings are stored in the phone's browser storage.
+- **Voice entry** uses the phone's built-in speech recognition. On most phones this sends the audio to Apple or Google to turn it into text, so it needs internet access.
+- The app loads two open-source libraries from public CDNs when it opens, so it needs internet access to start.
+
+---
+
+## Phone and browser support
+
+| | iPhone (Safari) | Android (Chrome) |
+|---|---|---|
+| Live camera scanning | ✓ | ✓ |
+| Voice entry | ✓ (asks for microphone and speech recognition permission) | ✓ |
+| Share the export | ✓ (share sheet) | ✓ (share sheet) |
+| Vibrate on scan | — | ✓ |
+
+If the **Say the ID** button is missing, that browser doesn't support voice. Try opening the link directly in Safari or Chrome rather than from another app.
+
+---
+
+## Troubleshooting
+
+| Problem | Fix |
 |---|---|
-| `index.html` | The whole app — open this on the phone (or host on GitHub Pages) |
-| `sample_MK6_mobile_data.json` | Example of what MK6 exports — load it to try the app without MK6 |
+| Camera won't open | Allow camera access for the site in the phone's settings, and make sure you're on the `https://` link |
+| Code won't read | Flatten the label, avoid glare, fill most of the box with the code; or use **Scan from photo**; or enter the ID by hand |
+| Field scanner won't read the phone screen | Turn screen brightness up, and hold the scanner a little further from the screen at a slight angle |
+| *That's the label you just scanned* | The app ignores the previous label for 5 seconds after **Scan next**. Move to the next label |
+| Voice gets letters wrong | Use Alpha, Bravo, Charlie, Delta, Echo, Foxtrot |
+| Still on an old version | Close the app fully and reopen it, or add `?v=` and the version number to the link |
 
-## Hosting on GitHub Pages
+---
 
-1. Put `index.html` in the repo root.
-2. Settings → Pages → deploy from `main` / root.
-3. Open the Pages URL on your phone and add it to the home screen.
+## Built with
 
-## Using it
-
-1. Open the app. Tap **Open** and choose the MK6 data JSON in your OneDrive
-   folder (the file MK6 wrote). Stock and pending picks load.
-2. **Stock Levels** to check on-hand; **Pick** to start.
-3. On the Pick screen, keep the input focused and scan: box QR → batch barcode →
-   repeat for every box. Delete any mistake and re-scan it. The same box QR can't
-   be scanned twice.
-4. **Review & submit.** Save the resulting `MK6_pick_READY.json` into your
-   OneDrive folder (the Share sheet lets you save straight there; otherwise it
-   downloads and you move it).
-5. Open MK6 — it detects the pick file, fills the matching lines, and you confirm
-   each order with **Pick**.
-
-## Notes / limits
-
-- A phone browser can't silently write into a synced folder, so submitting either
-  opens the **Share sheet** (save straight to OneDrive) or **downloads** the file
-  for you to move. That's a browser security boundary, not a bug.
-- Unknown QR scans are still captured; MK6 flags them on import so you can match
-  them manually rather than losing the scan.
-- This is a static page — no data leaves the device except the pick file you save.
-
-## Version
-
-v1.0 — first GitHub build. Look & feel matches the MK6 desktop (SAP blue).
+- [JsBarcode](https://github.com/lindell/JsBarcode) (MIT licence): draws the 1D barcode
+- [zxing-wasm](https://github.com/Sec-ant/zxing-wasm) (MIT licence), based on [zxing-cpp](https://github.com/zxing-cpp/zxing-cpp) (Apache 2.0 licence): reads the 2D code
+- A built-in Data Matrix repair decoder (grid fitting and Reed–Solomon error and erasure correction) for damaged labels
