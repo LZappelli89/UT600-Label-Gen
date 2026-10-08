@@ -113,6 +113,11 @@ code.raw{display:block;background:var(--field);border-radius:8px;padding:10px;wo
 #sheet h2{margin:0 0 4px;font-size:18px}
 .chk{display:flex;gap:10px;align-items:center;margin-top:14px;font-size:15px}
 .chk input{width:22px;height:22px}
+header h1{white-space:nowrap}
+@media (max-width:380px){header h1{font-size:16px}.themeseg button{padding:8px 8px;font-size:13px}}
+.themeseg{display:flex;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:3px;gap:2px}
+.themeseg button{border:0;background:transparent;color:var(--muted);font-size:14px;font-weight:600;padding:8px 10px;border-radius:9px;min-height:34px}
+.themeseg button[aria-checked="true"]{background:var(--accent);color:var(--accent-ink)}
 .ver{text-align:center;color:var(--muted);font-size:12px;margin:18px 0 0}
 .scanstat{width:min(68vw,260px);margin:10px auto 0;display:flex;flex-direction:column;gap:6px;align-items:stretch;text-align:center}
 .scanstat span{font-size:14px;font-weight:600;color:var(--muted)}
@@ -131,8 +136,10 @@ code.raw{display:block;background:var(--field);border-radius:8px;padding:10px;wo
 <body>
 <header>
   <h1>Label <span>Rescan</span></h1>
-  <button class="iconbtn" id="themeBtn" aria-label="Colour theme"></button>
-  <button class="iconbtn" id="openSettings" aria-label="Settings">⚙︎ Settings</button>
+  <div class="themeseg" role="radiogroup" aria-label="Colour theme" id="themeSeg">
+    <button role="radio" data-t="auto">Auto</button><button role="radio" data-t="light">Light</button><button role="radio" data-t="dark">Dark</button>
+  </div>
+  <button class="iconbtn" id="openSettings" aria-label="Settings">⚙︎</button>
 </header>
 
 <div class="tabs" role="tablist">
@@ -1439,21 +1446,21 @@ if (window.LR_TEST){
   n.after(t);
 }
 /* ---- version + colour theme ---- */
-const APP_VERSION = "8 Oct 2026 · v15";
+const APP_VERSION = "8 Oct 2026 · v16";
 $("appVer").textContent = "Label Rescan · " + APP_VERSION;
-const THEMES = {auto:"◐ Auto", light:"☀︎ Light", dark:"☾ Dark"};
+const THEMES = {auto:1, light:1, dark:1};
 let theme = "auto"; try{ theme = localStorage.getItem("lr_theme") || "auto"; }catch(e){}
 function applyTheme(t){
   theme = THEMES[t] ? t : "auto";
   if (theme === "auto") document.documentElement.removeAttribute("data-theme");
   else document.documentElement.setAttribute("data-theme", theme);
-  $("themeBtn").textContent = THEMES[theme];
+  document.querySelectorAll("#themeSeg button").forEach(b => b.setAttribute("aria-checked", b.dataset.t === theme ? "true" : "false"));
   $("sTheme").value = theme;
   const m = document.querySelector('meta[name="theme-color"]');
   if (m) m.setAttribute("content", getComputedStyle(document.body).backgroundColor);
   try{ localStorage.setItem("lr_theme", theme); }catch(e){}
 }
-$("themeBtn").onclick = () => applyTheme(theme === "auto" ? "light" : theme === "light" ? "dark" : "auto");
+$("themeSeg").onclick = e => { const b = e.target.closest("button"); if (b) applyTheme(b.dataset.t); };
 $("sTheme").onchange = e => applyTheme(e.target.value);
 applyTheme(theme);
 
