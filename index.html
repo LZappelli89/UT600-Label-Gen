@@ -195,7 +195,7 @@ header h1{white-space:nowrap}
       <p class="hint" id="manualHint">For GS1 codes, include the bracketed numbers, e.g. <b>(01)</b>…<b>(10)</b>…. The barcode updates as you type — check it against the label before scanning.</p>
       <button class="micbtn" id="micBtn" type="button" hidden><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M12 15a3.5 3.5 0 0 0 3.5-3.5v-6a3.5 3.5 0 0 0-7 0v6A3.5 3.5 0 0 0 12 15Zm6-3.5a1 1 0 1 0-2 0 4 4 0 0 1-8 0 1 1 0 1 0-2 0 6 6 0 0 0 5 5.9V20H8.5a1 1 0 1 0 0 2h7a1 1 0 1 0 0-2H13v-2.6a6 6 0 0 0 5-5.9Z"/></svg><span id="micLabel">Say the ID</span></button>
       <div class="nato" id="natoNote" hidden>
-        <p>Use the phonetic alphabet for letters where possible. B, C, D and E sound alike.</p>
+        <p>Use the phonetic alphabet where possible:</p>
         <div class="natogrid" id="natoGrid"></div>
       </div>
       <p class="hint voicemsg" id="voiceMsg" hidden></p>
@@ -1573,7 +1573,7 @@ $("tabScan").addEventListener("click", () => { if (listening) stopVoice(); });
 updateTypeHint();
 
 /* ---- version + colour theme ---- */
-const APP_VERSION = "9 Oct 2026 · v18";
+const APP_VERSION = "9 Oct 2026 · v19";
 $("appVer").textContent = "Label Rescan · " + APP_VERSION;
 const THEMES = {auto:1, light:1, dark:1};
 let theme = "auto"; try{ theme = localStorage.getItem("lr_theme") || "auto"; }catch(e){}
