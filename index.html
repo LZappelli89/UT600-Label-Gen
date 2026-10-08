@@ -666,7 +666,7 @@ function typedChanged(){
   if (parseBracketed(line)) typedTimer = setTimeout(()=>logScan(line, how), 2500);
   else if (spec.text.length === Math.max(1, +settings.idLen||8)) typedTimer = setTimeout(()=>logItem({id: spec.text, method:how}), 2500);
 }
-$("manual").oninput = () => { if (listening || rec) stopVoice(); entryMethod = "Typed"; typedChanged(); };
+$("manual").oninput = () => { if (voiceBusy()) stopVoice(); entryMethod = "Typed"; typedChanged(); };
 /* ---- big-button keypad ---- */
 let padMode = "num", kbMode = false;
 function padLetters(){ return (settings.letters||DEF.letters).toUpperCase().replace(/[^A-Z]/g,"").split("").filter((c,i,a)=>a.indexOf(c)===i); }
@@ -684,8 +684,8 @@ function drawPad(){
 }
 $("pad").onclick = e => {
   const b = e.target.closest("button"); if (!b) return;
-  if (listening || rec) stopVoice();
-  if (b.dataset.k === "clr") voiceMsg("");
+  if (voiceBusy()) stopVoice();
+  if (b.dataset.k === "clr"){ voiceMsg(""); heardFinal = ""; }
   const k = b.dataset.k, m = $("manual");
   if (k==="sw"){ padMode = padMode==="num" ? "abc" : "num"; drawPad(); return; }
   if (k==="del") m.value = m.value.slice(0,-1);
@@ -1375,10 +1375,10 @@ function handleDecoded(text, method){
   else scrollTo({top:$("resultWrap").offsetTop-10, behavior:"smooth"});
 }
 $("startBtn").onclick = startCam; $("stopBtn").onclick = releaseCam;
-$("againBtn").onclick = ()=>{ if (typeof stopVoice === "function" && (listening || rec)) { stopVoice(); voiceMsg(""); } if ($("paneType").classList.contains("hidden")) {
+$("againBtn").onclick = ()=>{ if (voiceBusy()) { stopVoice(); voiceMsg(""); } if ($("paneType").classList.contains("hidden")) {
     if (window.LR_TEST){ $("photoInput").click(); return; }   // test link: no live camera
     lastScan.until = Date.now() + 5000; scrollTo({top:0,behavior:"smooth"}); startCam(); } else { $("manual").value=""; render("",false); padMode="num"; drawPad(); scrollTo({top:0,behavior:"smooth"}); } };
-document.addEventListener("visibilitychange", ()=>{ if (document.hidden){ releaseCam(); if (typeof stopVoice === "function" && (listening || rec)) stopVoice(); } });
+document.addEventListener("visibilitychange", ()=>{ if (document.hidden){ releaseCam(); if (voiceBusy()) stopVoice(); } });
 
 /* ---- photo ---- */
 $("photoBtn").onclick = ()=>$("photoInput").click();
@@ -1538,7 +1538,7 @@ function parseSpoken(text){
 for (const [l, w] of Object.entries({A:"alpha",B:"bravo",C:"charlie",D:"delta",E:"echo",F:"foxtrot",G:"golf",H:"hotel",I:"india",J:"juliett",K:"kilo",L:"lima",M:"mike",N:"november",O:"oscar",P:"papa",Q:"quebec",R:"romeo",S:"sierra",T:"tango",U:"uniform",V:"victor",W:"whiskey",X:"xray",Y:"yankee",Z:"zulu"})) if (!SAY[w]) SAY[w] = l;
 SAY.juliet = "J"; SAY.whisky = "W";
 const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
-let rec = null, listening = false, heardFinal = "", voiceTimer = 0;
+let heardFinal = "", voiceTimer = 0;
 const NATO = {A:"Alpha",B:"Bravo",C:"Charlie",D:"Delta",E:"Echo",F:"Foxtrot",G:"Golf",H:"Hotel",I:"India",J:"Juliett",K:"Kilo",L:"Lima",M:"Mike",
   N:"November",O:"Oscar",P:"Papa",Q:"Quebec",R:"Romeo",S:"Sierra",T:"Tango",U:"Uniform",V:"Victor",W:"Whiskey",X:"X-ray",Y:"Yankee",Z:"Zulu"};
 function showNato(on){
@@ -1566,57 +1566,106 @@ function bestOf(alts){
   }
   return best;
 }
-// Fully shut the recogniser down and disconnect it, so nothing it sends later can
-// overwrite what the user types or says next.
-function stopVoice(){
-  clearTimeout(voiceTimer);
-  const r = rec; rec = null;
-  if (r){ r.onresult = r.onerror = r.onend = null; try{ r.abort(); }catch(e){} try{ r.stop(); }catch(e){} }
-  listening = false; $("micBtn").classList.remove("on"); $("micLabel").textContent = "Say the ID"; showNato(false);
+/* Voice session states: idle -> starting -> listening -> stopping -> idle.
+   Lessons from iPhones built in here:
+   - start() must run straight from the tap (no waiting first), or the iPhone ignores it.
+   - one recogniser is reused; a new session only starts once the old one has fully ended.
+   - stop() is never called from inside a result event, and results are ignored unless a
+     session is live, so a late result can't overwrite what's typed next.
+   - if a start doesn't come alive within a few seconds, the next tap uses a fresh recogniser.
+   - the camera is released first, as an open camera can stop the microphone working. */
+let recog = null, vState = "idle", freshNext = false, startWatch = 0, stopWatch = 0;
+const voiceBusy = () => vState !== "idle";
+function uiVoice(){
+  const on = vState === "starting" || vState === "listening";
+  $("micBtn").classList.toggle("on", on);
+  $("micLabel").textContent = vState === "starting" ? "Starting… speak when ready" : vState === "listening" ? "Listening… tap to stop" : "Say the ID";
+  showNato(on);
 }
-let voiceStarting = false;
-async function startVoice(){
-  if (listening){ stopVoice(); return; }
-  if (voiceStarting) return;
-  const hadOld = !!rec; stopVoice();
-  if (hadOld){ voiceStarting = true; await new Promise(r => setTimeout(r, 300)); voiceStarting = false; }  // let the old one finish closing
-  heardFinal = "";
-  const me = new Speech(); rec = me;
-  me.lang = navigator.language && /^en/i.test(navigator.language) ? navigator.language : "en-AU";
-  me.interimResults = true; me.continuous = true; me.maxAlternatives = 5;
-  me.onresult = e => {
-    if (rec !== me || !listening) return;          // stray result from a finished session
-    // rebuild what's been said from every result so far; the last one may still be changing
+function wire(r){
+  r.lang = navigator.language && /^en/i.test(navigator.language) ? navigator.language : "en-AU";
+  r.interimResults = true; r.continuous = true; r.maxAlternatives = 5;
+  const live = () => { if (r === recog && vState === "starting"){ vState = "listening"; clearTimeout(startWatch); uiVoice(); } };
+  r.onstart = live; r.onaudiostart = live; r.onspeechstart = live;
+  r.onresult = e => {
+    if (r !== recog || (vState !== "listening" && vState !== "starting")) return;   // late result: ignore
+    live();
     let prefix = "", lastAlts = [""];
     for (let i = 0; i < e.results.length; i++){
-      const r = e.results[i];
-      if (i === e.results.length - 1) lastAlts = Array.from(r).map(x => x.transcript);
-      else prefix = joinT(prefix, r[0].transcript);
+      const x = e.results[i];
+      if (i === e.results.length - 1) lastAlts = Array.from(x).map(y => y.transcript);
+      else prefix = joinT(prefix, x[0].transcript);
     }
     heardFinal = prefix;
     const b = bestOf(lastAlts);
     $("manual").value = b.id; padMode = "num"; drawPad(); entryMethod = "Voice"; typedChanged();
     voiceMsg(`Heard: “${esc(b.said)}”` + (b.unknown.length ? `<br>Didn't understand: ${esc(b.unknown.join(", "))}` : ""));
-    if (b.id.length >= Math.max(1, +settings.idLen||8) && !b.unknown.length) stopVoice();
+    if (b.id.length >= Math.max(1, +settings.idLen||8) && !b.unknown.length) setTimeout(stopVoice, 0);
   };
-  me.onerror = e => {
-    if (rec !== me) return;
-    const m = {"not-allowed":"Microphone blocked. Allow microphone (and speech recognition) for this site in your phone settings.",
+  r.onerror = e => {
+    if (r !== recog || e.error === "aborted") return;
+    const m = {"not-allowed":"Microphone blocked. Allow microphone (and speech recognition) for this site. See Settings ⚙ → Stop the Allow pop-ups.",
                "service-not-allowed":"Voice entry isn't allowed in this browser. Try Safari or Chrome.",
                "no-speech":"Didn't hear anything. Tap the microphone and try again.",
                "network":"Voice entry needs an internet connection on this phone.",
-               "audio-capture":"No microphone found."}[e.error];
+               "audio-capture":"The microphone is busy or missing. Close other apps using it and try again."}[e.error];
     if (m) voiceMsg(m);
+    if (e.error !== "no-speech") freshNext = true;
     stopVoice();
   };
-  me.onend = () => { if (rec === me && listening) stopVoice(); };
-  try{ me.start(); }catch(e){ rec = null; voiceMsg("Couldn't start voice entry. Wait a second and tap the microphone again."); return; }
-  listening = true; $("micBtn").classList.add("on"); $("micLabel").textContent = "Listening… tap to stop"; showNato(true);
+  r.onend = () => {
+    if (r !== recog) return;
+    clearTimeout(stopWatch); clearTimeout(startWatch); clearTimeout(voiceTimer);
+    vState = "idle"; uiVoice();
+    if (/One moment/.test($("voiceMsg").textContent)) voiceMsg("Ready. Tap the microphone.");
+  };
+}
+function getRecog(){
+  if (!recog || freshNext){
+    if (recog){ const old = recog; recog = null; try{ old.abort(); }catch(e){} }
+    freshNext = false; recog = new Speech(); wire(recog);
+  }
+  return recog;
+}
+function stopVoice(){
+  clearTimeout(voiceTimer); clearTimeout(startWatch);
+  if (vState === "idle" || vState === "stopping"){ uiVoice(); return; }
+  vState = "stopping"; uiVoice();
+  const r = recog;
+  try{ r.stop(); }catch(e){}
+  // if the phone never says it has ended, give up on this recogniser and use a new one next time
+  clearTimeout(stopWatch);
+  stopWatch = setTimeout(() => { if (r === recog && vState === "stopping"){ try{ r.abort(); }catch(e){} freshNext = true; vState = "idle"; uiVoice();
+    if (/One moment/.test($("voiceMsg").textContent)) voiceMsg("Ready. Tap the microphone."); } }, 1200);
+}
+function startVoice(){                       // runs directly from the tap
+  if (vState === "starting" || vState === "listening"){ stopVoice(); return; }
+  if (vState === "stopping"){                // previous session still closing: wait for it, then the user taps again
+    voiceMsg("One moment… tap the microphone again in a second.");
+    return;
+  }
+  if (typeof releaseCam === "function" && !running) releaseCam();
+  heardFinal = "";
+  freshNext = true;                          // a brand-new recogniser for every ID: some phones only allow one session each
+  let r = getRecog(), ok = false;
+  try{ r.start(); ok = true; }catch(e){
+    freshNext = true; r = getRecog();       // reused recogniser refused: try a brand-new one
+    try{ r.start(); ok = true; }catch(e2){}
+  }
+  if (!ok){ freshNext = true; voiceMsg("Voice entry couldn't start. Tap the microphone again."); uiVoice(); return; }
+  vState = "starting"; uiVoice();
   voiceMsg("Say each character, e.g. <b>five four zero nine nine Bravo eight seven</b>");
-  voiceTimer = setTimeout(stopVoice, 20000);
+  clearTimeout(startWatch);
+  startWatch = setTimeout(() => {
+    if (r === recog && vState === "starting"){
+      try{ r.abort(); }catch(e){} freshNext = true; vState = "idle"; uiVoice();
+      voiceMsg("Voice didn't start. Tap the microphone to try again.");
+    }
+  }, 5000);
+  clearTimeout(voiceTimer); voiceTimer = setTimeout(stopVoice, 25000);
 }
 if (Speech && !window.LR_TEST){ $("micBtn").hidden = false; $("micBtn").onclick = startVoice; }
-$("tabScan").addEventListener("click", () => { if (listening) stopVoice(); });
+$("tabScan").addEventListener("click", () => { if (voiceBusy()) stopVoice(); });
 updateTypeHint();
 
 /* ---- permission help (the phone decides whether to ask; these steps make it remember) ---- */
@@ -1638,7 +1687,7 @@ updateTypeHint();
 })();
 
 /* ---- version + colour theme ---- */
-const APP_VERSION = "9 Oct 2026 · v20";
+const APP_VERSION = "9 Oct 2026 · v21";
 $("appVer").textContent = "Label Rescan · " + APP_VERSION;
 const THEMES = {auto:1, light:1, dark:1};
 let theme = "auto"; try{ theme = localStorage.getItem("lr_theme") || "auto"; }catch(e){}
