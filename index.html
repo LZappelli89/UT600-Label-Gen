@@ -698,6 +698,462 @@ function variant(img, v){
 }
 const CLEAN_OPTS = {tryInvert:false, tryHarder:true};
 
+/* ===== Robust Data Matrix reader for this manufacturer's 32x32 labels =====
+   Finds the code (own locator + hints), fits its grid corner by corner and region by region,
+   samples every module, then decodes with Reed-Solomon error-and-erasure correction.
+   For this label layout it also substitutes the codewords that never change, which lets
+   the error correction concentrate on the parts that vary (the ID and part number).
+   Every result must pass the code's own error correction with spare margin and match the
+   label layout, so damaged codes give the right answer or nothing. */
+const RDM = (() => {
+  // ---------- GF(256) / Reed-Solomon (Data Matrix: poly 0x12D, roots a^1..a^n) ----------
+  const EXP = new Uint8Array(512), LOG = new Uint8Array(256);
+  for (let i = 0, x = 1; i < 255; i++) { EXP[i] = x; LOG[x] = i; x <<= 1; if (x & 0x100) x ^= 0x12D; }
+  for (let i = 255; i < 512; i++) EXP[i] = EXP[i - 255];
+  const mul = (a, b) => (a && b) ? EXP[LOG[a] + LOG[b]] : 0;
+  const div = (a, b) => a ? EXP[(LOG[a] + 255 - LOG[b]) % 255] : 0;
+  const evalHigh = (p, x) => { let y = 0; for (let i = 0; i < p.length; i++) y = mul(y, x) ^ p[i]; return y; };
+  const evalLow = (p, x) => { let y = 0; for (let i = p.length - 1; i >= 0; i--) y = mul(y, x) ^ p[i]; return y; };
+
+  function rsCorrect(cwIn, nsym, erase) {
+    const n = cwIn.length, cw = cwIn.slice();
+    const S = []; let any = 0;
+    for (let j = 1; j <= nsym; j++) { const s = evalHigh(cw, EXP[j]); S.push(s); any |= s; }
+    if (!any) return { cw, nerr: 0 };
+    erase = [...new Set(erase || [])].sort((a, b) => a - b);
+    if (erase.length > nsym) return null;
+    let eloc = [1];
+    for (const pos of erase) {
+      const X = EXP[n - 1 - pos], ne = eloc.concat([0]);
+      for (let j = 0; j < eloc.length; j++) ne[j + 1] ^= mul(eloc[j], X);
+      eloc = ne;
+    }
+    const T = new Array(nsym).fill(0);
+    for (let i = 0; i < nsym; i++) { let v = 0; for (let j = 0; j < eloc.length && j <= i; j++) v ^= mul(eloc[j], S[i - j]); T[i] = v; }
+    const nE = erase.length;
+    let lam = [1], B = [1], L = 0, m = 1, b = 1;
+    for (let k = nE; k < nsym; k++) {
+      let d = T[k];
+      for (let i = 1; i <= L; i++) if (i < lam.length) d ^= mul(lam[i], T[k - i]);
+      if (!d) { m++; continue; }
+      const coef = div(d, b), nl = lam.concat(new Array(Math.max(0, B.length + m - lam.length)).fill(0));
+      for (let i = 0; i < B.length; i++) nl[i + m] ^= mul(coef, B[i]);
+      if (2 * L <= k - nE) { B = lam; L = k - nE + 1 - L; b = d; m = 1; } else m++;
+      lam = nl;
+    }
+    while (lam.length > 1 && !lam[lam.length - 1]) lam.pop();
+    const nerr = lam.length - 1;
+    if (2 * nerr + nE > nsym) return null;
+    const loc = new Array(lam.length + eloc.length - 1).fill(0);
+    for (let i = 0; i < lam.length; i++) for (let j = 0; j < eloc.length; j++) loc[i + j] ^= mul(lam[i], eloc[j]);
+    const errpos = [];
+    for (let p = 0; p < n; p++) if (!evalLow(loc, EXP[(255 - (n - 1 - p)) % 255])) errpos.push(p);
+    if (errpos.length !== loc.length - 1) return null;
+    const om = new Array(nsym).fill(0);
+    for (let i = 0; i < nsym; i++) { let v = 0; for (let j = 0; j < loc.length && j <= i; j++) v ^= mul(loc[j], S[i - j]); om[i] = v; }
+    const dloc = []; for (let i = 1; i < loc.length; i++) dloc.push(i % 2 ? loc[i] : 0);
+    for (const p of errpos) {
+      const Xinv = EXP[(255 - (n - 1 - p)) % 255], den = evalLow(dloc, Xinv);
+      if (!den) return null;
+      cw[p] ^= div(evalLow(om, Xinv), den);
+    }
+    for (let j = 1; j <= nsym; j++) if (evalHigh(cw, EXP[j])) return null;
+    return { cw, nerr: errpos.length };
+  }
+
+  // ---------- 32x32 symbol geometry ----------
+  const SIZE = 32, REG = 14, NREG = 2, STEP = REG + 2, NDATA = 62, NECC = 36;
+  function placement(nrow, ncol) {
+    const grid = Array.from({ length: nrow }, () => new Array(ncol).fill(null));
+    const module = (r, c, ch, bit) => {
+      if (r < 0) { r += nrow; c += 4 - ((nrow + 4) % 8); }
+      if (c < 0) { c += ncol; r += 4 - ((ncol + 4) % 8); }
+      grid[r][c] = [ch, bit];
+    };
+    const utah = (r, c, ch) => { [[r-2,c-2],[r-2,c-1],[r-1,c-2],[r-1,c-1],[r-1,c],[r,c-2],[r,c-1],[r,c]].forEach(([a, b], i) => module(a, b, ch, i + 1)); };
+    const corner = (ch, pts) => pts.forEach(([a, b], i) => module(a, b, ch, i + 1));
+    let ch = 1, r = 4, c = 0;
+    do {
+      if (r === nrow && c === 0) corner(ch++, [[nrow-1,0],[nrow-1,1],[nrow-1,2],[0,ncol-2],[0,ncol-1],[1,ncol-1],[2,ncol-1],[3,ncol-1]]);
+      if (r === nrow-2 && c === 0 && ncol % 4) corner(ch++, [[nrow-3,0],[nrow-2,0],[nrow-1,0],[0,ncol-4],[0,ncol-3],[0,ncol-2],[0,ncol-1],[1,ncol-1]]);
+      if (r === nrow-2 && c === 0 && ncol % 8 === 4) corner(ch++, [[nrow-3,0],[nrow-2,0],[nrow-1,0],[0,ncol-2],[0,ncol-1],[1,ncol-1],[2,ncol-1],[3,ncol-1]]);
+      if (r === nrow+4 && c === 2 && ncol % 8 === 0) corner(ch++, [[nrow-1,0],[nrow-1,ncol-1],[0,ncol-3],[0,ncol-2],[0,ncol-1],[1,ncol-3],[1,ncol-2],[1,ncol-1]]);
+      do { if (r < nrow && c >= 0 && !grid[r][c]) utah(r, c, ch++); r -= 2; c += 2; } while (r >= 0 && c < ncol);
+      r += 1; c += 3;
+      do { if (r >= 0 && c < ncol && !grid[r][c]) utah(r, c, ch++); r += 2; c -= 2; } while (r < nrow && c >= 0);
+      r += 3; c += 1;
+    } while (r < nrow || c < ncol);
+    const pos = Array.from({ length: ch - 1 }, () => new Array(8));
+    for (let a = 0; a < nrow; a++) for (let b = 0; b < ncol; b++) if (grid[a][b]) {
+      const [k, bit] = grid[a][b];
+      pos[k - 1][bit - 1] = (a + 1 + 2 * Math.floor(a / REG)) * SIZE + (b + 1 + 2 * Math.floor(b / REG)); // symbol index
+    }
+    return pos;
+  }
+  const PLACE = placement(REG * NREG, REG * NREG);
+  const FIXED = new Int8Array(SIZE * SIZE).fill(-1);
+  for (let R = 0; R < NREG; R++) for (let C = 0; C < NREG; C++) {
+    const r0 = R * STEP, c0 = C * STEP;
+    for (let i = 0; i < STEP; i++) {
+      FIXED[(r0 + STEP - 1) * SIZE + c0 + i] = 1;
+      FIXED[(r0 + i) * SIZE + c0] = 1;
+      FIXED[r0 * SIZE + c0 + i] = i % 2 === 0 ? 1 : 0;
+      FIXED[(r0 + i) * SIZE + c0 + STEP - 1] = i % 2 === 1 ? 1 : 0;
+    }
+    FIXED[(r0 + STEP - 1) * SIZE + c0 + STEP - 1] = 1;
+  }
+  const FIXED_ALL = [], FIXED_REG = {};
+  for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) if (FIXED[r * SIZE + c] >= 0) {
+    const e = [r, c, FIXED[r * SIZE + c]]; FIXED_ALL.push(e);
+    const key = Math.floor(r / STEP) + "," + Math.floor(c / STEP); (FIXED_REG[key] = FIXED_REG[key] || []).push(e);
+  }
+
+  // ---------- geometry helpers ----------
+  // projective map from the unit square to a quad (Heckbert)
+  function sq2quad(q) {
+    const [x0, y0] = q[0], [x1, y1] = q[1], [x2, y2] = q[2], [x3, y3] = q[3];
+    const sx = x0 - x1 + x2 - x3, sy = y0 - y1 + y2 - y3;
+    let a, b, c, d, e, f, g, h;
+    if (Math.abs(sx) < 1e-9 && Math.abs(sy) < 1e-9) {
+      a = x1 - x0; b = x2 - x1; c = x0; d = y1 - y0; e = y2 - y1; f = y0; g = 0; h = 0;
+    } else {
+      const dx1 = x1 - x2, dx2 = x3 - x2, dy1 = y1 - y2, dy2 = y3 - y2, den = dx1 * dy2 - dx2 * dy1;
+      g = (sx * dy2 - dx2 * sy) / den; h = (dx1 * sy - sx * dy1) / den;
+      a = x1 - x0 + g * x1; b = x3 - x0 + h * x3; c = x0;
+      d = y1 - y0 + g * y1; e = y3 - y0 + h * y3; f = y0;
+    }
+    return (u, v) => { const w = g * u + h * v + 1; return [(a * u + b * v + c) / w, (d * u + e * v + f) / w]; };
+  }
+
+  function makeImg(data, w, h) { return { g: data, w, h }; }
+  function px(img, x, y) {
+    const xi = x < 0 ? 0 : x >= img.w ? img.w - 1 : x | 0, yi = y < 0 ? 0 : y >= img.h ? img.h - 1 : y | 0;
+    return img.g[yi * img.w + xi];
+  }
+  function fitScore(img, quad, list) {
+    const M = sq2quad(quad); let sd = 0, nd = 0, sl = 0, nl = 0; const vals = [];
+    for (const [r, c, e] of list) {
+      const [x, y] = M((c + 0.5) / SIZE, (r + 0.5) / SIZE), v = px(img, x, y);
+      vals.push(v); if (e) { sd += v; nd++; } else { sl += v; nl++; }
+    }
+    if (!nd || !nl) return -1;
+    const dk = sd / nd, lt = sl / nl, th = (dk + lt) / 2; let ok = 0;
+    for (let i = 0; i < list.length; i++) if ((list[i][2] === 1) === (vals[i] < th)) ok++;
+    return ok / list.length + (lt - dk) / 2550;
+  }
+  // Hill-climb the four corners. Besides moving single corners it also tries moving the
+  // whole quad (shift, grow/shrink, rotate), which escapes "one module out" alignments.
+  function refine(img, quad, list, steps) {
+    let q = quad.map(p => p.slice()), best = fitScore(img, q, list);
+    const whole = (q, st) => {
+      const cx = (q[0][0] + q[1][0] + q[2][0] + q[3][0]) / 4, cy = (q[0][1] + q[1][1] + q[2][1] + q[3][1]) / 4;
+      const side = Math.hypot(q[1][0] - q[0][0], q[1][1] - q[0][1]), k = st / side, a = st / side;
+      const out = [];
+      for (const [dx, dy] of [[st,0],[-st,0],[0,st],[0,-st]]) out.push(q.map(([x, y]) => [x + dx, y + dy]));
+      for (const f of [1 + k, 1 - k]) out.push(q.map(([x, y]) => [cx + (x - cx) * f, cy + (y - cy) * f]));
+      for (const t of [a, -a]) { const c = Math.cos(t), s = Math.sin(t); out.push(q.map(([x, y]) => [cx + (x - cx) * c - (y - cy) * s, cy + (x - cx) * s + (y - cy) * c])); }
+      // move one whole edge (two neighbouring corners together)
+      for (let e = 0; e < 4; e++) for (const [dx, dy] of [[st,0],[-st,0],[0,st],[0,-st]]) {
+        const t = q.map(p => p.slice()); t[e][0] += dx; t[e][1] += dy; t[(e + 1) % 4][0] += dx; t[(e + 1) % 4][1] += dy; out.push(t);
+      }
+      return out;
+    };
+    for (const st of steps) for (let it = 0; it < 6; it++) {
+      let imp = false;
+      for (const t of whole(q, st)) { const s = fitScore(img, t, list); if (s > best) { best = s; q = t; imp = true; } }
+      for (let i = 0; i < 4; i++) for (const [dx, dy] of [[st,0],[-st,0],[0,st],[0,-st]]) {
+        const t = q.map(p => p.slice()); t[i][0] += dx; t[i][1] += dy;
+        const s = fitScore(img, t, list); if (s > best) { best = s; q = t; imp = true; }
+      }
+      if (!imp) break;
+    }
+    return { q, score: best };
+  }
+  function orientations(q) {
+    const out = [];
+    for (const m of [q, [q[0], q[3], q[2], q[1]]]) for (let k = 0; k < 4; k++) out.push(m.slice(k).concat(m.slice(0, k)));
+    return out;
+  }
+  const modSize = q => Math.hypot(q[1][0] - q[0][0], q[1][1] - q[0][1]) / SIZE;
+
+  // ---------- sampling ----------
+  const OFFS = [[0,0],[-0.22,-0.22],[0.22,-0.22],[-0.22,0.22],[0.22,0.22]];
+  function sampleGlobal(img, q) {
+    const M = sq2quad(q), out = new Float32Array(SIZE * SIZE);
+    for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) {
+      let s = 0; for (const [dx, dy] of OFFS) { const [x, y] = M((c + 0.5 + dx) / SIZE, (r + 0.5 + dy) / SIZE); s += px(img, x, y); }
+      out[r * SIZE + c] = s / OFFS.length;
+    }
+    return out;
+  }
+  function samplePiecewise(img, q) {
+    const M = sq2quad(q), out = new Float32Array(SIZE * SIZE), ms = modSize(q);
+    for (let R = 0; R < NREG; R++) for (let C = 0; C < NREG; C++) {
+      const u0 = C * STEP / SIZE, u1 = (C + 1) * STEP / SIZE, v0 = R * STEP / SIZE, v1 = (R + 1) * STEP / SIZE;
+      // region corners in image space, expressed as a full-symbol quad so fitScore can be reused
+      const rq = [M(u0, v0), M(u1, v0), M(u1, v1), M(u0, v1)];
+      const toFull = rqq => { const Mr = sq2quad(rqq), A = (u, v) => Mr((u - u0) / (u1 - u0), (v - v0) / (v1 - v0)); return [A(0, 0), A(1, 0), A(1, 1), A(0, 1)]; };
+      const list = FIXED_REG[R + "," + C];
+      let cur = rq, best = fitScore(img, toFull(cur), list);
+      for (const st of [0.5 * ms, 0.25 * ms]) for (let it = 0; it < 2; it++) {
+        let imp = false;
+        for (let i = 0; i < 4; i++) for (const [dx, dy] of [[st,0],[-st,0],[0,st],[0,-st]]) {
+          const t = cur.map(p => p.slice()); t[i][0] += dx; t[i][1] += dy;
+          const s = fitScore(img, toFull(t), list); if (s > best) { best = s; cur = t; imp = true; }
+        }
+        if (!imp) break;
+      }
+      const Mf = sq2quad(toFull(cur));
+      for (let r = R * STEP; r < (R + 1) * STEP; r++) for (let c = C * STEP; c < (C + 1) * STEP; c++) {
+        let s = 0; for (const [dx, dy] of OFFS) { const [x, y] = Mf((c + 0.5 + dx) / SIZE, (r + 0.5 + dy) / SIZE); s += px(img, x, y); }
+        out[r * SIZE + c] = s / OFFS.length;
+      }
+    }
+    return out;
+  }
+
+  // ---------- codewords & decoding ----------
+  function decodeAscii(data) {
+    let out = "", first = true;
+    for (let i = 0; i < data.length; i++) {
+      const c = data[i];
+      if (c === 129) break;
+      if (c >= 1 && c <= 128) out += String.fromCharCode(c - 1);
+      else if (c >= 130 && c <= 229) out += String(c - 130).padStart(2, "0");
+      else if (c === 232) { if (!first) out += "\x1d"; }
+      else if (c === 235) { i++; if (i < data.length) out += String.fromCharCode(data[i] + 127); }
+      else return null;
+      first = false;
+    }
+    return out;
+  }
+  const PREFIX = [220, 84, 70, 131, 57, 30, 155, 137, 130, 131, 156];          // 90SE018 GS 250 7000126
+  const SUFFIX = [30, 154, 131, 133, null, null, 30, 160, 50, 30, 167, 50, 30, 150, 130]; // GS 240 10351.. GS 30 1 GS 37 1 GS 20 00
+  const padVal = p1 => { const v = 129 + ((149 * p1) % 253) + 1; return v > 254 ? v - 254 : v; };
+  const TEMPLATES = {};
+  for (let k = 4; k <= 8; k++) {
+    const t = PREFIX.concat(new Array(k).fill(null), SUFFIX); t.push(129);
+    while (t.length < NDATA) t.push(padVal(t.length + 1));
+    TEMPLATES[k] = t;
+  }
+  function checkTemplate(data, k) {
+    const t = TEMPLATES[k];
+    for (let i = 0; i < NDATA; i++) if (t[i] !== null && data[i] !== t[i]) return false;
+    const id = decodeAscii(data.slice(11, 11 + k).concat([129]));
+    if (!id || !/^[0-9A-F]{8}$/.test(id)) return false;
+    const a = data[11 + k + 4], b = data[11 + k + 5];
+    return a >= 130 && a <= 229 && b >= 130 && b <= 229;
+  }
+  const MARGIN = 4; // spare correction capacity kept back to guard against mis-correction
+
+  function tryDecode(grey) {
+    let lo, hi; { const s = Array.from(grey).sort((a, b) => a - b); lo = s[Math.floor(s.length * 0.1)]; hi = s[Math.floor(s.length * 0.9)]; }
+    for (const f of [0.5, 0.4, 0.6, 0.3, 0.7]) {
+      const th = lo + (hi - lo) * f;
+      const cws = PLACE.map(bits => { let v = 0; for (const i of bits) v = (v << 1) | (grey[i] < th ? 1 : 0); return v; });
+      // Suspicion per module: close to the threshold, or inside a solid patch (an ink blot or
+      // a scratch makes a 3x3 block all one colour, which real data rarely does).
+      const dk = new Uint8Array(SIZE * SIZE); for (let i = 0; i < dk.length; i++) dk[i] = grey[i] < th ? 1 : 0;
+      const sus = new Float32Array(SIZE * SIZE);
+      for (let r = 1; r < SIZE - 1; r++) for (let c = 1; c < SIZE - 1; c++) {
+        const i = r * SIZE + c; let same = 0;
+        for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) same += dk[i + dr * SIZE + dc] === dk[i] ? 1 : 0;
+        sus[i] = same === 9 ? 1 : 0;
+      }
+      const conf = PLACE.map(bits => { let m = 1e9, s = 0; for (const i of bits) { m = Math.min(m, Math.abs(grey[i] - th)); s += sus[i]; } return m / (hi - lo + 1) - s * 0.15; });
+      const order = cws.map((_, i) => i).sort((a, b) => conf[a] - conf[b]);
+      for (const ne of [0, 6, 12, 18, 24]) {
+        const res = rsCorrect(cws, NECC, order.slice(0, ne));
+        if (res && 2 * res.nerr + ne <= NECC - MARGIN) {
+          const txt = decodeAscii(res.cw.slice(0, NDATA));
+          if (txt) return { text: txt, how: "generic e" + ne };
+        }
+      }
+      for (let k = 4; k <= 8; k++) {
+        const t = TEMPLATES[k];
+        const sub = cws.map((v, i) => (i >= NDATA || t[i] === null) ? v : t[i]);
+        const unknown = []; for (let i = 0; i < NDATA; i++) if (t[i] === null) unknown.push(i);
+        for (const extra of [0, 6, 12, 16, 20]) {
+          const low = order.filter(i => (i >= NDATA || t[i] === null) && !unknown.includes(i)).slice(0, extra);
+          for (const er of [unknown.concat(low), low]) {
+            const res = rsCorrect(sub, NECC, er);
+            if (res && 2 * res.nerr + er.length <= NECC - MARGIN && checkTemplate(res.cw, k))
+              return { text: decodeAscii(res.cw.slice(0, NDATA)), how: "template k" + k + " e" + er.length };
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  // Slide each edge in or out (perpendicular to itself) by up to 3 modules, for every
+  // orientation, keeping whatever matches the border pattern best.
+  function edgeSearch(img, q0) {
+    let best = null;
+    for (const o0 of orientations(q0)) {
+      let q = o0.map(p => p.slice()), s0 = fitScore(img, q, FIXED_ALL);
+      for (let round = 0; round < 2; round++) for (let e = 0; e < 4; e++) {
+        const a = q[e], b = q[(e + 1) % 4], cx = (q[0][0] + q[1][0] + q[2][0] + q[3][0]) / 4, cy = (q[0][1] + q[1][1] + q[2][1] + q[3][1]) / 4;
+        let nx = -(b[1] - a[1]), ny = b[0] - a[0]; const L = Math.hypot(nx, ny); nx /= L; ny /= L;
+        if ((a[0] + b[0]) / 2 - cx > 0 !== nx > 0 && Math.abs(nx) > Math.abs(ny)) { nx = -nx; ny = -ny; }
+        else if (Math.abs(ny) >= Math.abs(nx) && ((a[1] + b[1]) / 2 - cy > 0) !== ny > 0) { nx = -nx; ny = -ny; }
+        const ms = modSize(q);
+        let bt = null;
+        for (let k = -6; k <= 6; k++) {
+          const d = k * 0.5 * ms, t = q.map(p => p.slice());
+          t[e][0] += nx * d; t[e][1] += ny * d; t[(e + 1) % 4][0] += nx * d; t[(e + 1) % 4][1] += ny * d;
+          const sc = fitScore(img, t, FIXED_ALL); if (!bt || sc > bt.sc) bt = { sc, t };
+        }
+        if (bt.sc > s0) { s0 = bt.sc; q = bt.t; }
+      }
+      if (!best || s0 > best.s) best = { s: s0, o: q };
+    }
+    return best;
+  }
+
+  // refine, then re-check all 8 orientations of the fitted square and refine again
+  function fitQuad(img, q0) {
+    let q = q0, score = -1;
+    for (let round = 0; round < 3; round++) {
+      let bo = null;
+      for (const o of orientations(q)) { const s = fitScore(img, o, FIXED_ALL); if (!bo || s > bo.s) bo = { s, o }; }
+      const ms = modSize(bo.o);
+      const r = refine(img, bo.o, FIXED_ALL, round ? [0.5 * ms, 0.25 * ms] : [1.5 * ms, 0.75 * ms, 0.4 * ms, 0.2 * ms]);
+      if (r.score <= score + 1e-6) break;
+      q = r.q; score = r.score;
+    }
+    return { q, score };
+  }
+
+  // Coarse search of position, size and rotation around a rough square estimate,
+  // scoring the fixed border pattern in all 8 orientations.
+  function coarseFit(img, quad) {
+    const cx = (quad[0][0] + quad[2][0]) / 2, cy = (quad[0][1] + quad[2][1]) / 2;
+    const side = Math.hypot(quad[1][0] - quad[0][0], quad[1][1] - quad[0][1]);
+    const th0 = Math.atan2(quad[1][1] - quad[0][1], quad[1][0] - quad[0][0]);
+    let best = null;
+    const sq = (x, y, s, th) => { const c = Math.cos(th), si = Math.sin(th), h = s / 2, P = (u, v) => [x + u * c - v * si, y + u * si + v * c]; return [P(-h, -h), P(h, -h), P(h, h), P(-h, h)]; };
+    for (const dth of [0, -0.06, 0.06]) for (let f = 0.8; f <= 1.35; f += 0.05) {
+      const s = side * f;
+      for (let dy = -0.2; dy <= 0.201; dy += 0.05) for (let dx = -0.2; dx <= 0.201; dx += 0.05) {
+        const q = sq(cx + dx * side, cy + dy * side, s, th0 + dth);
+        for (const o of orientations(q)) { const sc = fitScore(img, o, FIXED_ALL); if (!best || sc > best.s) best = { s: sc, o }; }
+      }
+    }
+    return best;
+  }
+
+  // Decode starting from an approximate quad (any corner order)
+  function decodeAt(img, quad, coarse) {
+    if (modSize(quad) < 1.6) return null;
+    const starts = [];
+    if (coarse) { const c = coarseFit(img, quad); starts.push(edgeSearch(img, c.o), c); }
+    else { let best = null; for (const o of orientations(quad.map(p => p.slice()))) { const s = fitScore(img, o, FIXED_ALL); if (!best || s > best.s) best = { s, o }; } starts.push(best); }
+    for (const st of starts) {
+      if (st.s < 0.75) continue;   // nothing like a Data Matrix border here
+      const { q } = fitQuad(img, st.o);
+      // the border pattern is symmetric about the BL-TR diagonal, so try the mirror too
+      for (const qq of [q, [q[2], q[1], q[0], q[3]]]) for (const sampler of [sampleGlobal, samplePiecewise]) {
+        const r = tryDecode(sampler(img, qq));
+        if (r) return Object.assign(r, { quad: qq });
+      }
+    }
+    return null;
+  }
+
+  // ---------- locator 2: sliding windows scored for "looks like a 2D code" ----------
+  // Dense, roughly half dark, with as many light/dark changes across as down (unlike
+  // striped barcodes or text), surrounded by a quieter margin. Orientation comes from
+  // the dominant edge direction (mod 90 degrees).
+  function locateWindows(img, maxCands = 6) {
+    const sc = Math.min(1, 480 / Math.max(img.w, img.h)), W = Math.max(1, Math.round(img.w * sc)), H = Math.max(1, Math.round(img.h * sc));
+    const g = new Float32Array(W * H);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      // average a small block so downscaling doesn't alias the modules
+      let s = 0, n = 0; const x0 = x / sc, y0 = y / sc, st = Math.max(1, (1 / sc) / 2);
+      for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) { s += px(img, x0 + dx * st, y0 + dy * st); n++; }
+      g[y * W + x] = s / n;
+    }
+    const integ = (arr) => { const I = new Float64Array((W + 1) * (H + 1)); for (let y = 0; y < H; y++) { let row = 0; for (let x = 0; x < W; x++) { row += arr[y * W + x]; I[(y + 1) * (W + 1) + x + 1] = I[y * (W + 1) + x + 1] + row; } } return I; };
+    const box = (I, x0, y0, x1, y1) => { x0 = Math.max(0, Math.round(x0)); y0 = Math.max(0, Math.round(y0)); x1 = Math.min(W, Math.round(x1)); y1 = Math.min(H, Math.round(y1)); if (x1 <= x0 || y1 <= y0) return 0; return I[y1 * (W + 1) + x1] - I[y0 * (W + 1) + x1] - I[y1 * (W + 1) + x0] + I[y0 * (W + 1) + x0]; };
+    const Ig = integ(g), R = Math.max(6, Math.round(Math.max(W, H) / 30));
+    const dark = new Uint8Array(W * H);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const n = (Math.min(W, x + R + 1) - Math.max(0, x - R)) * (Math.min(H, y + R + 1) - Math.max(0, y - R));
+      dark[y * W + x] = g[y * W + x] < box(Ig, x - R, y - R, x + R + 1, y + R + 1) / n - 6 ? 1 : 0;
+    }
+    const hE = new Uint8Array(W * H), vE = new Uint8Array(W * H);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const p = y * W + x; if (x < W - 1) hE[p] = dark[p] !== dark[p + 1]; if (y < H - 1) vE[p] = dark[p] !== dark[p + W]; }
+    const Id = integ(dark), Ih = integ(hE), Iv = integ(vE);
+    const cands = [];
+    for (let s = 40; s < Math.min(W, H) * 0.95; s = Math.round(s * 1.18)) {
+      const st = Math.max(3, Math.round(s / 8));
+      for (let y = 0; y + s <= H; y += st) for (let x = 0; x + s <= W; x += st) {
+        const A = s * s, d = box(Id, x, y, x + s, y + s) / A;
+        if (d < 0.25 || d > 0.75) continue;
+        const hn = box(Ih, x, y, x + s, y + s) / s, vn = box(Iv, x, y, x + s, y + s) / s; // changes per line
+        if (hn < 6 || vn < 6 || hn > 40 || vn > 40) continue;
+        const iso = Math.min(hn, vn) / Math.max(hn, vn); if (iso < 0.6) continue;
+        // margin ring a quarter of the size wide: should be calmer than inside
+        const m = Math.round(s / 4), ringA = (s + 2 * m) * (s + 2 * m) - A;
+        const ringE = (box(Ih, x - m, y - m, x + s + m, y + s + m) - box(Ih, x, y, x + s, y + s) + box(Iv, x - m, y - m, x + s + m, y + s + m) - box(Iv, x, y, x + s, y + s)) / Math.max(1, ringA);
+        const inE = (hn + vn) / s;
+        const score = iso * (1 - Math.abs(d - 0.5)) * (inE / (inE + ringE * 1.5));
+        cands.push({ x, y, s, score });
+      }
+    }
+    cands.sort((a, b) => b.score - a.score);
+    const keep = [];
+    for (const c of cands) {
+      if (keep.some(k => Math.abs(k.x + k.s / 2 - c.x - c.s / 2) < Math.max(k.s, c.s) / 2 && Math.abs(k.y + k.s / 2 - c.y - c.s / 2) < Math.max(k.s, c.s) / 2)) continue;
+      keep.push(c); if (keep.length >= maxCands) break;
+    }
+    // orientation from 4x-angle-averaged gradients; size of the rotated square from the window
+    return keep.map(k => {
+      let cx = 0, sy = 0;
+      for (let y = k.y + 1; y < k.y + k.s - 1; y++) for (let x = k.x + 1; x < k.x + k.s - 1; x++) {
+        const gx = g[y * W + x + 1] - g[y * W + x - 1], gy = g[(y + 1) * W + x] - g[(y - 1) * W + x], m2 = gx * gx + gy * gy;
+        if (m2 < 100) continue;
+        const a = Math.atan2(gy, gx) * 4; cx += Math.cos(a) * Math.sqrt(m2); sy += Math.sin(a) * Math.sqrt(m2);
+      }
+      const th = Math.atan2(sy, cx) / 4, side = k.s / (Math.abs(Math.cos(th)) + Math.abs(Math.sin(th)));
+      const mx = (k.x + k.s / 2) / sc, my = (k.y + k.s / 2) / sc, hs = side / 2 / sc, c = Math.cos(th), s = Math.sin(th);
+      const P = (u, v) => [mx + u * c - v * s, my + u * s + v * c];
+      return [P(-hs, -hs), P(hs, -hs), P(hs, hs), P(-hs, hs)];
+    });
+  }
+
+  // main entry: img = {g: Uint8 grey, w, h}; hints = quads from another detector
+  function read(img, hints = [], opts = {}) {
+    const tried = [];
+    const near = q => tried.some(t => Math.hypot(t[0][0] + t[2][0] - q[0][0] - q[2][0], t[0][1] + t[2][1] - q[0][1] - q[2][1]) < modSize(q) * 6);
+    const attempt = q => { if (near(q)) return null; tried.push(q); return decodeAt(img, q); };
+    for (const q of hints) { const r = attempt(q); if (r) return r; }
+    if (opts.locate !== false) {
+      for (const q0 of locateWindows(img, opts.maxCands || 6)) {
+        if (near(q0)) continue; tried.push(q0);
+        // windows often sit inside the code, so also try a larger square around the same centre
+        const cx = (q0[0][0] + q0[2][0]) / 2, cy = (q0[0][1] + q0[2][1]) / 2;
+        for (const f of [1, 1.4]) { const r = decodeAt(img, q0.map(([x, y]) => [cx + (x - cx) * f, cy + (y - cy) * f]), true); if (r) return r; }
+      }
+    }
+    return null;
+  }
+  return { read, decodeAt, coarseFit, edgeSearch, fitScore:(img,q)=>fitScore(img,q,FIXED_ALL), refine:(img,q)=>fitQuad(img,q), locate: locateWindows, rsCorrect, _t: { TEMPLATES, PLACE, padVal } };
+})();
+
+/* grey image (one byte per pixel) of part of an image/video, for the robust reader */
+function greyOf(src, sx, sy, sw, sh, outW, outH){
+  const d = grab(src, sx, sy, sw, sh, outW, outH), g = new Uint8Array(d.width*d.height);
+  for (let i=0, j=0; i<g.length; i++, j+=4) g[i] = (d.data[j]*77 + d.data[j+1]*150 + d.data[j+2]*29) >> 8;
+  return {g, w:d.width, h:d.height};
+}
+function quadOf(r, scale, ox, oy){
+  const p = r.position; if (!p) return null;
+  return [p.topLeft, p.topRight, p.bottomRight, p.bottomLeft].map(c => [ox + c.x/scale, oy + c.y/scale]);
+}
+function rdmText(r){ return r ? r.text : null; }
+
 /* ---- camera ---- */
 let stream=null, running=false, torchOn=false, busy=false, tick=0, camRegion=null, camSeen=-99, cleanIdx=0;
 const video = document.createElement("video");
@@ -734,13 +1190,26 @@ async function loop(){
       const side=Math.min(vw,vh), sx=(vw-side)/2, sy=(vh-side)/2, size=Math.min(side,1280), sc=size/side;
       const res = await ZXingWASM.readBarcodes(grab(video, sx, sy, side, side, size, size),
         Object.assign({}, READ_OPTS, {returnErrors:true}));
-      let text = null;
+      let text = null, seenQuad = null;
       for (const r of res){
         if (r.isValid && r.text){ text = resultText(r); break; }
-        const reg = regionOf(r, sc, sx, sy, vw, vh); if (reg){ camRegion = reg; camSeen = tick; }
+        const reg = regionOf(r, sc, sx, sy, vw, vh); if (reg){ camRegion = reg; camSeen = tick; seenQuad = quadOf(r, sc, sx, sy); }
       }
       tick++;
-      // 2. Badly printed code: try a few clean-ups on that spot in this frame
+      // 2. Seen but unreadable: robust reader on this frame at full camera resolution
+      if (!text && seenQuad && camRegion){
+        const g = camRegion, k = Math.min(1, 900/Math.max(g.w, g.h));
+        const img = greyOf(video, g.x, g.y, g.w, g.h, g.w*k, g.h*k);
+        const r = RDM.decodeAt(img, seenQuad.map(([x, y]) => [(x - g.x)*k, (y - g.y)*k]));
+        if (r) text = r.text;
+      }
+      // 3. Nothing detected for a while: look for the code ourselves every few frames
+      if (!text && !seenQuad && tick % 6 === 0 && tick - camSeen > 6){
+        const k = Math.min(1, 900/side), img = greyOf(video, sx, sy, side, side, side*k, side*k);
+        const r = RDM.read(img, [], {maxCands: 2});
+        if (r) text = r.text;
+      }
+      // 4. Still nothing: try a few zxing clean-ups on that spot in this frame
       if (!text && camRegion && tick - camSeen < 15){
         // small random shifts and size changes: damaged codes read on some samplings and not others
         const g = camRegion, j = () => (Math.random()-0.5) * g.code * 0.02;
@@ -816,6 +1285,23 @@ async function decodePhoto(file){
   // 2. Find where the code is, even if it can't be read yet
   const ds = Math.min(1, 1400/Math.max(W,H));
   const found = await ZXingWASM.readBarcodes(grab(img,0,0,W,H,W*ds,H*ds), Object.assign({}, READ_OPTS, {returnErrors:true, maxNumberOfSymbols:4}));
+  // 3. Robust reader: fit the grid ourselves and use the label layout to correct far more damage.
+  //    Hints come from the detector on the photo and on cleaned-up copies of it.
+  show("Reading photo… this code is badly printed, trying harder","warn");
+  const big = Math.min(1, 2400/Math.max(W,H)), gimg = greyOf(img, 0, 0, W, H, W*big, H*big);
+  const hints = [];
+  for (const r of found){ if (r.isValid && r.text) return resultText(r); const q = quadOf(r, ds/big, 0, 0); if (q) hints.push(q); }
+  for (const s of [0.5, 0.3]){
+    const base = grab(img, 0, 0, W, H, W*s, H*s);
+    for (const v of [null, [100,1], [70,0], [130,1]]){
+      try{
+        const rs = await ZXingWASM.readBarcodes(variant(base, v), Object.assign({}, READ_OPTS, {returnErrors:true, maxNumberOfSymbols:4}));
+        for (const r of rs){ if (r.isValid && r.text) return resultText(r); const q = quadOf(r, s/big, 0, 0); if (q) hints.push(q); }
+      }catch(e){}
+    }
+  }
+  const robust = RDM.read(gimg, hints);
+  if (robust) return robust.text;
   const regions = [];
   for (const r of found){
     if (r.isValid && r.text) return resultText(r);
