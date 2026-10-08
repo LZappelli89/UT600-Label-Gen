@@ -75,6 +75,12 @@ input[type=text]{font-family:ui-monospace,Menlo,Consolas,monospace;letter-spacin
 .seg button{border:0;background:transparent;color:var(--muted);font-weight:600;font-size:15px;padding:10px;border-radius:9px}
 .seg button.on{background:var(--text);color:var(--bg)}
 #manual{font-size:28px;font-weight:700;letter-spacing:2px;text-align:center;padding:12px}
+.micbtn{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;margin-top:12px;min-height:60px;border:2px solid var(--accent);border-radius:12px;background:transparent;color:var(--text);font-size:18px;font-weight:700}
+.micbtn.on{background:var(--accent);color:var(--accent-ink);animation:micpulse 1.2s ease-in-out infinite}
+@keyframes micpulse{50%{box-shadow:0 0 0 8px color-mix(in srgb, var(--accent) 25%, transparent)}}
+@media (prefers-reduced-motion: reduce){.micbtn.on{animation:none}}
+.voicemsg{text-align:center;margin:8px 0 0}
+.voicemsg b{color:var(--text)}
 .pad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
 .pad button{min-height:64px;border:1px solid var(--line);border-radius:12px;background:var(--field);color:var(--text);
   font:700 28px/1 ui-monospace,Menlo,Consolas,monospace;touch-action:manipulation;user-select:none;-webkit-user-select:none}
@@ -182,6 +188,8 @@ header h1{white-space:nowrap}
       <label class="f" for="manual" style="margin-top:0" id="manualLabel">Type the code exactly as printed</label>
       <input type="text" id="manual" autocomplete="off" autocapitalize="characters" spellcheck="false" readonly inputmode="none" placeholder="e.g. 54099B87">
       <p class="hint" id="manualHint">For GS1 codes, include the bracketed numbers, e.g. <b>(01)</b>…<b>(10)</b>…. The barcode updates as you type — check it against the label before scanning.</p>
+      <button class="micbtn" id="micBtn" type="button" hidden><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M12 15a3.5 3.5 0 0 0 3.5-3.5v-6a3.5 3.5 0 0 0-7 0v6A3.5 3.5 0 0 0 12 15Zm6-3.5a1 1 0 1 0-2 0 4 4 0 0 1-8 0 1 1 0 1 0-2 0 6 6 0 0 0 5 5.9V20H8.5a1 1 0 1 0 0 2h7a1 1 0 1 0 0-2H13v-2.6a6 6 0 0 0 5-5.9Z"/></svg><span id="micLabel">Say the ID</span></button>
+      <p class="hint voicemsg" id="voiceMsg" hidden></p>
       <div class="pad" id="pad" aria-label="Keypad"></div>
       <button class="sample" id="kbToggle" type="button">Use phone keyboard instead</button>
     </div>
@@ -566,7 +574,7 @@ function drawSession(){
   $("sessCount").textContent = n + (n===1 ? " label" : " labels");
   $("sessStarted").textContent = session.started ? "Started " + fmtTime(session.started) + ". Tap a label to show its barcode again." : "";
   $("hist").innerHTML = session.items.map((it,i)=>`<button data-i="${i}"><span class="id">${esc(it.id)}</span>
-      <span class="raw">${it.raw ? vis(stripPrefix(it.raw).s) : "2D code unreadable, ID typed"}</span>
+      <span class="raw">${it.raw ? vis(stripPrefix(it.raw).s) : "2D code unreadable, ID entered by hand"}</span>
       <small>${new Date(it.last).toLocaleString()} · ${esc(it.methods.join(", "))}${it.count>1?` · ${it.count}×`:""}</small></button>`).join("");
 }
 $("hist").onclick = e => {
@@ -591,7 +599,7 @@ function sessionCsv(){
   const iso = t => { const d=new Date(t), p=x=>String(x).padStart(2,"0"); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; };
   const head = ["ID","How it was read","First seen","Last seen","Times","Serial (250)","Field (90)","Part no. (240)","Full 2D code data"];
   const rows = session.items.slice().sort((a,b)=>a.first-b.first).map(it => [it.id, it.methods.join(" + "), iso(it.first), iso(it.last), it.count,
-      it.f250, it.f90, it.f240, it.raw ? stripPrefix(it.raw).s.replace(/\x1d/g," | ") : "(2D code unreadable, ID typed)"]);
+      it.f250, it.f90, it.f240, it.raw ? stripPrefix(it.raw).s.replace(/\x1d/g," | ") : "(2D code unreadable, ID entered by hand)"]);
   return "﻿" + [head, ...rows].map(r=>r.map(csvCell).join(",")).join("\r\n") + "\r\n";
 }
 async function exportSession(){
@@ -631,16 +639,17 @@ function tab(which){
 $("tabScan").onclick = ()=>tab("scan"); $("tabType").onclick = ()=>tab("type");
 // A typed code is added to the session once it has stayed complete for 2.5 s,
 // so half-typed or mistyped IDs that get corrected straight away aren't logged.
-let typedTimer = 0;
+let typedTimer = 0, entryMethod = "Typed";
 function typedChanged(){
   clearTimeout(typedTimer);
   const v = $("manual").value, spec = render(v, false);
   if (!spec) return;
   const line = stripPrefix(v).s.trim();
-  if (parseBracketed(line)) typedTimer = setTimeout(()=>logScan(line, "Typed"), 2500);
-  else if (spec.text.length === Math.max(1, +settings.idLen||8)) typedTimer = setTimeout(()=>logItem({id: spec.text, method:"Typed"}), 2500);
+  const how = entryMethod;
+  if (parseBracketed(line)) typedTimer = setTimeout(()=>logScan(line, how), 2500);
+  else if (spec.text.length === Math.max(1, +settings.idLen||8)) typedTimer = setTimeout(()=>logItem({id: spec.text, method:how}), 2500);
 }
-$("manual").oninput = typedChanged;
+$("manual").oninput = () => { entryMethod = "Typed"; typedChanged(); };
 /* ---- big-button keypad ---- */
 let padMode = "num", kbMode = false;
 function padLetters(){ return (settings.letters||DEF.letters).toUpperCase().replace(/[^A-Z]/g,"").split("").filter((c,i,a)=>a.indexOf(c)===i); }
@@ -664,7 +673,7 @@ $("pad").onclick = e => {
   else if (k==="clr") m.value = "";
   else m.value += k;
   try{ navigator.vibrate && navigator.vibrate(10); }catch(_){}
-  typedChanged();
+  entryMethod = "Typed"; typedChanged();
 };
 $("kbToggle").onclick = () => {
   kbMode = !kbMode; const m=$("manual");
@@ -1429,10 +1438,11 @@ $("modeSeg").onclick = e => { const b=e.target.closest("button"); if(!b) return;
 function updateTypeHint(){
   $("manualLabel").textContent = "Type the ID printed under the barcode";
   $("manual").placeholder = "e.g. 54099B87";
-  $("manualHint").innerHTML = "Just the characters after <b>ID:</b>. Tap <b>ABC</b> for letters and <b>123</b> for numbers. Check the barcode against the label before scanning.";
+  $("manualHint").innerHTML = (Speech && !window.LR_TEST)
+    ? "Just the characters after <b>ID:</b>. Tap <b>Say the ID</b> and read it out, or use the keypad. Check the barcode against the label before scanning."
+    : "Just the characters after <b>ID:</b>. Tap <b>ABC</b> for letters and <b>123</b> for numbers. Check the barcode against the label before scanning.";
 }
 $("tabType").addEventListener("click", updateTypeHint);
-updateTypeHint();
 
 /* Test build (claude.ai link): live camera is blocked there, so lead with photos */
 if (window.LR_TEST){
@@ -1445,8 +1455,107 @@ if (window.LR_TEST){
   t.onclick=()=>{ tab("scan"); handleDecoded("90SE018\x1d250700012654099B87\x1d2401035123\x1d301\x1d371\x1d2000", "Example"); };
   n.after(t);
 }
+/* ---- voice entry ----
+   Turns speech into an ID. Accepts digits ("five", "54"), letters ("B", "bee") and the
+   phonetic alphabet ("Bravo"), which is far more reliable for B / C / D / E that sound alike.
+   "double" / "triple" repeat the next character. Listens until the ID is complete. */
+const SAY = {
+  zero:"0", oh:"0", o:"0", nought:"0", nil:"0", null:"0",
+  one:"1", won:"1", two:"2", to:"2", too:"2", three:"3", tree:"3", free:"3", four:"4", for:"4", fore:"4",
+  five:"5", fife:"5", six:"6", sicks:"6", seven:"7", eight:"8", ate:"8", nine:"9", niner:"9",
+  a:"A", ay:"A", eh:"A", hey:"A", alpha:"A", alfa:"A", alpher:"A",
+  b:"B", be:"B", bee:"B", bravo:"B",
+  c:"C", see:"C", sea:"C", si:"C", charlie:"C", charley:"C",
+  d:"D", dee:"D", delta:"D",
+  e:"E", ee:"E", echo:"E",
+  f:"F", ef:"F", eff:"F", foxtrot:"F", fox:"F"
+};
+const TEENS = {ten:"10", eleven:"11", twelve:"12", thirteen:"13", fourteen:"14", fifteen:"15", sixteen:"16", seventeen:"17", eighteen:"18", nineteen:"19"};
+const TENS = {twenty:"2", thirty:"3", forty:"4", fourty:"4", fifty:"5", sixty:"6", seventy:"7", eighty:"8", ninety:"9"};
+const SKIP = new Set(["id","i.d.","colon","the","is","and","um","uh","er","dot","dash","space","then","letter","number"]);
+function parseSpoken(text){
+  let s = String(text||"").toLowerCase().replace(/(\d),(?=\d{3})/g, "$1");     // 54,099 -> 54099
+  const toks = s.split(/[^a-z0-9.]+/).flatMap(t => t.match(/[a-z.]+|\d+/g) || []);
+  let out = "", unknown = [], rep = 1;
+  for (let k = 0; k < toks.length; k++){
+    let t = toks[k].replace(/\./g, "");
+    if (TENS[t]){   // "fifty four" -> 54, "fifty" -> 50
+      const nx = (toks[k+1]||"").replace(/\./g, ""), u = SAY[nx];
+      let v = TENS[t] + ((u && /^[1-9]$/.test(u)) ? (k++, u) : "0");
+      out += rep > 1 ? v[0].repeat(rep) + v.slice(1) : v; rep = 1; continue;
+    }
+    if (TEENS[t]){ out += TEENS[t]; rep = 1; continue; }
+    if (!t || SKIP.has(t)) continue;
+    if (t === "double"){ rep = 2; continue; }
+    if (t === "triple"){ rep = 3; continue; }
+    let v = null;
+    if (/^\d+$/.test(t)) v = t;
+    else if (SAY[t]) v = SAY[t];
+    else if (/^[a-f]+$/.test(t) && t.length <= 3) v = t.toUpperCase();   // "bd", "b"
+    if (v === null){ unknown.push(t); rep = 1; continue; }
+    out += rep > 1 ? v[0].repeat(rep) + v.slice(1) : v; rep = 1;
+  }
+  return {id: out, unknown};
+}
+const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, listening = false, heardFinal = "", voiceTimer = 0;
+function voiceMsg(html){ $("voiceMsg").innerHTML = html; $("voiceMsg").hidden = !html; }
+function bestOf(alts){
+  const need = Math.max(1, +settings.idLen||8);
+  let best = null;
+  for (const a of alts){
+    const p = parseSpoken(heardFinal + " " + a);
+    const score = (p.id.length === need ? 100 : 0) - Math.abs(p.id.length - need) - p.unknown.length * 2;
+    if (!best || score > best.score) best = Object.assign(p, {score, said: (heardFinal + " " + a).trim()});
+  }
+  return best;
+}
+function stopVoice(){
+  clearTimeout(voiceTimer);
+  if (rec){ try{ rec.stop(); }catch(e){} }
+  listening = false; $("micBtn").classList.remove("on"); $("micLabel").textContent = "Say the ID";
+}
+function startVoice(){
+  if (listening){ stopVoice(); return; }
+  heardFinal = "";
+  rec = new Speech();
+  rec.lang = navigator.language && /^en/i.test(navigator.language) ? navigator.language : "en-AU";
+  rec.interimResults = true; rec.continuous = true; rec.maxAlternatives = 5;
+  rec.onresult = e => {
+    let interimAlts = [""];
+    for (let i = e.resultIndex; i < e.results.length; i++){
+      const r = e.results[i];
+      if (r.isFinal){
+        const alts = Array.from(r).map(x => x.transcript);
+        const b = bestOf(alts); heardFinal = b.said;
+      } else interimAlts = [r[0].transcript];
+    }
+    const b = bestOf(interimAlts);
+    $("manual").value = b.id; padMode = "num"; drawPad(); entryMethod = "Voice"; typedChanged();
+    voiceMsg(`Heard: “${esc(b.said)}”` + (b.unknown.length ? `<br>Didn't understand: ${esc(b.unknown.join(", "))}` : ""));
+    if (b.id.length >= Math.max(1, +settings.idLen||8) && !b.unknown.length) stopVoice();
+  };
+  rec.onerror = e => {
+    const m = {"not-allowed":"Microphone blocked. Allow microphone (and speech recognition) for this site in your phone settings.",
+               "service-not-allowed":"Voice entry isn't allowed in this browser. Try Safari or Chrome.",
+               "no-speech":"Didn't hear anything. Tap the microphone and try again.",
+               "network":"Voice entry needs an internet connection on this phone.",
+               "audio-capture":"No microphone found."}[e.error];
+    if (m) voiceMsg(m);
+    stopVoice();
+  };
+  rec.onend = () => { if (listening) stopVoice(); };
+  try{ rec.start(); }catch(e){ voiceMsg("Couldn't start voice entry."); return; }
+  listening = true; $("micBtn").classList.add("on"); $("micLabel").textContent = "Listening… tap to stop";
+  voiceMsg("Say each character, e.g. <b>five four zero nine nine Bravo eight seven</b>");
+  voiceTimer = setTimeout(stopVoice, 20000);
+}
+if (Speech && !window.LR_TEST){ $("micBtn").hidden = false; $("micBtn").onclick = startVoice; }
+$("tabScan").addEventListener("click", () => { if (listening) stopVoice(); });
+updateTypeHint();
+
 /* ---- version + colour theme ---- */
-const APP_VERSION = "8 Oct 2026 · v16";
+const APP_VERSION = "9 Oct 2026 · v17";
 $("appVer").textContent = "Label Rescan · " + APP_VERSION;
 const THEMES = {auto:1, light:1, dark:1};
 let theme = "auto"; try{ theme = localStorage.getItem("lr_theme") || "auto"; }catch(e){}
