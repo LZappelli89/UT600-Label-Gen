@@ -53,9 +53,7 @@ Open the **Type code** tab and enter the characters printed after **ID:** on the
 
   For example: *"five four zero nine nine Bravo eight seven"*. "Double nine" and "oh" for zero also work. The app stops listening once the ID is complete.
 
-  **On iPhone**, the browser's speech recognition only works for the first listen after a page loads (an open Apple/WebKit bug). The app works around this automatically:
-  - each listen runs in a fresh hidden mini-page, so the phone treats every ID as a first listen
-  - if a phone still goes quiet, the app does a quick automatic refresh ("Microphone reset…") and remembers to refresh between IDs on that phone. From then on **Clear** refreshes and you tap **Say the ID** as normal. The session list and settings are kept.
+  **On iPhone**, after a listen the phone can leave its microphone channel (the audio session) stuck, so the next listen hears nothing. This is an Apple/WebKit bug. The app resets the microphone automatically when you tap **Clear** or **Scan next**, or just before listening if you didn't, so every **Say the ID** starts clean. If a listen still hears nothing, it says *Microphone reset. Tap Say the ID again*. If that fails too, it offers the keyboard 🎤 instead.
 
 Always check the ID on screen against the label before scanning.
 
@@ -82,7 +80,7 @@ The camera and microphone only work over **https**, which GitHub Pages provides.
 
 ### Updating
 
-Upload the new `index.html` over the old one and **Commit changes**. The version shows at the bottom of the main screen (for example *Label Rescan · 9 Oct 2026 · v24*). If a phone still shows the old version after a few minutes, fully close the app and reopen it, or add `?v=24` to the end of the link.
+Upload the new `index.html` over the old one and **Commit changes**. The version shows at the bottom of the main screen (for example *Label Rescan · 9 Oct 2026 · v25*). If a phone still shows the old version after a few minutes, fully close the app and reopen it, or add `?v=25` to the end of the link.
 
 ---
 
@@ -162,7 +160,7 @@ If the **Say the ID** button is missing, that browser doesn't support voice. Try
 |---|---|
 | Camera won't open | Allow camera access for the site (see *Stopping the Allow pop-ups*), and make sure you're on the `https://` link |
 | Asked to Allow every time | See *Stopping the Allow pop-ups* |
-| Voice only works for the first ID (iPhone) | Fixed in v24. Update the app. If a listen hears nothing, the app resets the microphone with a quick refresh and says *Microphone reset*. Tap **Say the ID** again |
+| Voice only works for the first ID (iPhone) | Fixed in v25. Update the app. **Clear** and **Scan next** now reset the microphone |
 | *One moment…* when tapping the microphone | The previous ID is still closing. Tap again when it says *Ready* |
 | Code won't read | Flatten the label, avoid glare, fill most of the box with the code; or use **Scan from photo**; or enter the ID by hand |
 | Field scanner won't read the phone screen | Turn screen brightness up, and hold the scanner a little further from the screen at a slight angle |
