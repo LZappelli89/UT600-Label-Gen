@@ -550,7 +550,7 @@ async function openFull(){
 let wake=null;
 function closeFull(){ $("full").classList.add("hidden"); try{ wake && wake.release(); }catch(e){} wake=null; }
 $("fullBtn").onclick = openFull; $("closeFull").onclick = closeFull;
-$("fullNext").onclick = () => { closeFull(); $("againBtn").click(); };
+$("fullNext").onclick = () => { flushTyped(); closeFull(); $("againBtn").click(); };
 // After "Scan next" the label just scanned is usually still in front of the camera,
 // so ignore that same code for a few seconds instead of instantly showing it again.
 let lastScan = {raw:"", until:0};
@@ -657,17 +657,29 @@ function tab(which){
 $("tabScan").onclick = ()=>tab("scan"); $("tabType").onclick = ()=>tab("type");
 // A typed code is added to the session once it has stayed complete for 2.5 s,
 // so half-typed or mistyped IDs that get corrected straight away aren't logged.
-let typedTimer = 0, entryMethod = "Typed";
+let typedTimer = 0, entryMethod = "Typed", typedPending = null;
+// log a finished ID straight away (used before Clear or a refresh would lose it)
+function flushTyped(){ if (typedPending){ clearTimeout(typedTimer); const f = typedPending; typedPending = null; f(); } }
 function typedChanged(){
   clearTimeout(typedTimer);
   const v = $("manual").value, spec = render(v, false);
   if (!spec) return;
   const line = stripPrefix(v).s.trim();
   const how = entryMethod;
-  if (parseBracketed(line)) typedTimer = setTimeout(()=>logScan(line, how), 2500);
-  else if (spec.text.length === Math.max(1, +settings.idLen||8)) typedTimer = setTimeout(()=>logItem({id: spec.text, method:how}), 2500);
+  typedPending = null;
+  if (parseBracketed(line)) typedPending = () => logScan(line, how);
+  else if (spec.text.length === Math.max(1, +settings.idLen||8)) typedPending = () => logItem({id: spec.text, method:how});
+  if (typedPending){ const f = typedPending; typedTimer = setTimeout(() => { if (typedPending === f){ typedPending = null; f(); } }, 2500); }
 }
-let dictTimer = 0;
+let dictTimer = 0, pendingDict = null;
+// keyboard closed (dictation finished): now swap the dictated words for the ID
+$("manual").addEventListener("blur", () => {
+  if (!pendingDict) return;
+  const d = pendingDict, need = Math.max(1, +settings.idLen||8); pendingDict = null;
+  $("manual").value = d.id; entryMethod = "Voice"; typedChanged();
+  voiceMsg(`Heard: “${esc(d.said)}”` + (d.id.length < need ? `<br>Got ${d.id.length} of ${need}.` : ""));
+  dictating = false; if (kbMode) setKb(false); showNato(false);
+});
 $("manual").oninput = () => {
   if (voiceBusy()) stopVoice();
   const v = $("manual").value, need = Math.max(1, +settings.idLen||8);
@@ -683,12 +695,9 @@ $("manual").oninput = () => {
     const p = parseSpoken(v);
     voiceMsg(p.id ? `Will enter: <b>${esc(p.id)}</b>` + (p.unknown.length ? `<br>Didn't understand: ${esc(p.unknown.join(", "))}` : "")
                   : (dictating ? "Listening to the keyboard microphone…" : ""));
-    dictTimer = setTimeout(() => {
-      if ($("manual").value !== v || !p.id) return;
-      $("manual").value = p.id; entryMethod = "Voice"; typedChanged();
-      voiceMsg(`Heard: “${esc(v.trim())}”` + (p.id.length < need ? `<br>Got ${p.id.length} of ${need}. Tap the 🎤 again and say the rest.` : ""));
-      if (p.id.length >= need){ dictating = false; setKb(false); showNato(false); }
-    }, 1500);
+    // show the barcode for what's been heard, but leave the text alone until the keyboard closes
+    if (p.id) render(p.id, false);
+    pendingDict = p.id ? {id: p.id, said: v.trim()} : null;
     return;
   }
   entryMethod = "Typed"; typedChanged();
@@ -711,6 +720,8 @@ function drawPad(){
 $("pad").onclick = e => {
   const b = e.target.closest("button"); if (!b) return;
   if (voiceBusy()) stopVoice();
+  if (b.dataset.k === "clr") flushTyped();
+  if (b.dataset.k === "clr" && IS_IOS && voiceRefresh && voiceWins > 0){ refreshForVoice("Cleared. Tap Say the ID for the next one."); return; }
   if (dictating){ dictating = false; $("micBtn").classList.remove("on"); $("micLabel").textContent = "Say the ID"; }
   if (b.dataset.k === "clr"){ voiceMsg(""); heardFinal = ""; }
   const k = b.dataset.k, m = $("manual");
@@ -1408,7 +1419,8 @@ function handleDecoded(text, method){
   else scrollTo({top:$("resultWrap").offsetTop-10, behavior:"smooth"});
 }
 $("startBtn").onclick = startCam; $("stopBtn").onclick = releaseCam;
-$("againBtn").onclick = ()=>{ if (voiceBusy()) { stopVoice(); voiceMsg(""); } if ($("paneType").classList.contains("hidden")) {
+$("againBtn").onclick = ()=>{ flushTyped(); if (voiceBusy()) { stopVoice(); voiceMsg(""); }
+  if (IS_IOS && voiceRefresh && voiceWins > 0 && !$("paneType").classList.contains("hidden")){ refreshForVoice("Tap Say the ID for the next one."); return; } if ($("paneType").classList.contains("hidden")) {
     if (window.LR_TEST){ $("photoInput").click(); return; }   // test link: no live camera
     lastScan.until = Date.now() + 5000; scrollTo({top:0,behavior:"smooth"}); startCam(); } else { $("manual").value=""; render("",false); padMode="num"; drawPad(); scrollTo({top:0,behavior:"smooth"}); } };
 document.addEventListener("visibilitychange", ()=>{ if (document.hidden){ releaseCam(); if (voiceBusy()) stopVoice(); } });
@@ -1609,7 +1621,17 @@ function bestOf(alts){
    - the camera is released first, as an open camera can stop the microphone working. */
 let recog = null, vState = "idle", freshNext = false, startWatch = 0, stopWatch = 0, hearWatch = 0;
 const IS_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
-let lastVoice = {id:"", said:""}, gotResult = false, voiceBase = "";
+let lastVoice = {id:"", said:""}, gotResult = false, voiceBase = "", voiceWins = 0;
+// "refresh mode": this phone needs a page refresh between voice IDs (remembered for the browser tab)
+let voiceRefresh = false; try{ voiceRefresh = localStorage.getItem("lr_voice_refresh") === "1"; }catch(e){}
+function refreshForVoice(note){
+  try{
+    localStorage.setItem("lr_voice_refresh", "1");
+    if (typeof flushTyped === "function") flushTyped();
+    sessionStorage.setItem("lr_restore", JSON.stringify({tab:"type", note: note || "Ready. Tap Say the ID."}));
+  }catch(e){}
+  location.reload();
+}
 const voiceBusy = () => vState !== "idle";
 function uiVoice(){
   const on = vState === "starting" || vState === "listening";
@@ -1633,6 +1655,7 @@ function wire(r){
     }
     heardFinal = joinT(voiceBase, prefix);   // voiceBase = what was said earlier, when continuing an ID
     const b = bestOf(lastAlts);
+    if (!gotResult) voiceWins++;
     gotResult = true; clearTimeout(hearWatch);
     lastVoice = {id: b.id, said: b.said};
     $("manual").value = b.id; padMode = "num"; drawPad(); entryMethod = "Voice"; typedChanged();
@@ -1660,10 +1683,29 @@ function wire(r){
     if (/One moment/.test($("voiceMsg").textContent)) voiceMsg("Ready. Tap the microphone.");
   };
 }
+/* iPhones: speech recognition works for the first listen after a page loads, then goes quiet.
+   So each listen runs inside a brand-new invisible mini-page (iframe), which the phone treats
+   as a fresh page. Old mini-pages are removed once finished. */
+let voiceFrame = null;
+function freshSpeechCtor(){
+  if (!IS_IOS) return Speech;
+  try{
+    if (voiceFrame){ const old = voiceFrame; setTimeout(() => old.remove(), 1500); }
+    const f = document.createElement("iframe");
+    f.setAttribute("allow", "microphone");
+    f.setAttribute("aria-hidden", "true"); f.tabIndex = -1;
+    f.style.cssText = "position:fixed;left:-10px;top:-10px;width:1px;height:1px;opacity:0;border:0;pointer-events:none";
+    document.body.appendChild(f);
+    const w = f.contentWindow, C = w && (w.SpeechRecognition || w.webkitSpeechRecognition);
+    if (C){ voiceFrame = f; return C; }
+    f.remove();
+  }catch(e){}
+  return Speech;
+}
 function getRecog(){
   if (!recog || freshNext){
     if (recog){ const old = recog; recog = null; try{ old.abort(); }catch(e){} }
-    freshNext = false; recog = new Speech(); wire(recog);
+    freshNext = false; const C = freshSpeechCtor(); recog = new C(); wire(recog);
   }
   return recog;
 }
@@ -1688,11 +1730,11 @@ function startDictation(){
   showNato(true);
   $("micBtn").classList.add("on"); $("micLabel").textContent = "Now tap 🎤 on the keyboard";
   setTimeout(() => { try{ $("manual").scrollIntoView({block:"start", behavior:"smooth"}); }catch(e){} }, 300);
-  voiceMsg("Now tap the <b>🎤</b> on the keyboard and read the ID out. The barcode appears when you stop.");
+  voiceMsg("Now tap the <b>🎤</b> on the keyboard and read the ID out, then tap <b>Done</b> on the keyboard.");
 }
 let dictating = false;
 function startVoice(){                       // runs directly from the tap
-  if (IS_IOS){ startDictation(); return; }
+  if (IS_IOS && voiceRefresh && voiceWins > 0 && vState === "idle"){ refreshForVoice("Ready. Tap Say the ID."); return; }
   if (vState === "starting" || vState === "listening"){ stopVoice(); return; }
   if (vState === "stopping"){                // previous session still closing: wait for it, then the user taps again
     voiceMsg("One moment… tap the microphone again in a second.");
@@ -1717,9 +1759,11 @@ function startVoice(){                       // runs directly from the tap
   hearWatch = setTimeout(() => {
     if (r === recog && (vState === "listening" || vState === "starting") && !gotResult){
       try{ r.abort(); }catch(e){} freshNext = true; vState = "idle"; uiVoice();
-      voiceFallback();
+      // a listen worked earlier in this page but this one heard nothing: reset with a refresh
+      if (IS_IOS && voiceWins > 0) refreshForVoice("Microphone reset. Tap Say the ID and read the ID out.");
+      else voiceFallback();
     }
-  }, 9000);
+  }, 7000);
   clearTimeout(startWatch);
   startWatch = setTimeout(() => {
     if (r === recog && vState === "starting"){
@@ -1757,7 +1801,7 @@ updateTypeHint();
 })();
 
 /* ---- version + colour theme ---- */
-const APP_VERSION = "9 Oct 2026 · v23";
+const APP_VERSION = "9 Oct 2026 · v24";
 $("appVer").textContent = "Label Rescan · " + APP_VERSION;
 const THEMES = {auto:1, light:1, dark:1};
 let theme = "auto"; try{ theme = localStorage.getItem("lr_theme") || "auto"; }catch(e){}
@@ -1777,6 +1821,10 @@ applyTheme(theme);
 
 drawPad();
 drawSession();
+try{
+  const rs = JSON.parse(sessionStorage.getItem("lr_restore") || "null");
+  if (rs){ sessionStorage.removeItem("lr_restore"); if (rs.tab === "type"){ tab("type"); if (rs.note) voiceMsg(rs.note); } }
+}catch(e){}
 </script>
 </body>
 </html>
