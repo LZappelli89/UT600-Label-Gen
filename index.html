@@ -196,7 +196,7 @@ header h1{white-space:nowrap}
   <section id="paneType" class="hidden">
     <div class="card">
       <label class="f" for="manual" style="margin-top:0" id="manualLabel">Type the code exactly as printed</label>
-      <input type="text" id="manual" autocomplete="off" autocapitalize="characters" spellcheck="false" readonly inputmode="none" placeholder="e.g. 54099B87">
+      <input type="text" id="manual" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" readonly inputmode="none" placeholder="e.g. 54099B87">
       <p class="hint" id="manualHint">For GS1 codes, include the bracketed numbers, e.g. <b>(01)</b>…<b>(10)</b>…. The barcode updates as you type — check it against the label before scanning.</p>
       <button class="micbtn" id="micBtn" type="button" hidden><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M12 15a3.5 3.5 0 0 0 3.5-3.5v-6a3.5 3.5 0 0 0-7 0v6A3.5 3.5 0 0 0 12 15Zm6-3.5a1 1 0 1 0-2 0 4 4 0 0 1-8 0 1 1 0 1 0-2 0 6 6 0 0 0 5 5.9V20H8.5a1 1 0 1 0 0 2h7a1 1 0 1 0 0-2H13v-2.6a6 6 0 0 0 5-5.9Z"/></svg><span id="micLabel">Say the ID</span></button>
       <div class="nato" id="natoNote" hidden>
@@ -670,16 +670,24 @@ function typedChanged(){
 let dictTimer = 0;
 $("manual").oninput = () => {
   if (voiceBusy()) stopVoice();
-  const v = $("manual").value;
-  // looks like dictated words rather than a typed code
-  if (/\s/.test(v.trim()) && !/^\s*\(/.test(v) && typeof parseSpoken === "function"){
+  const v = $("manual").value, need = Math.max(1, +settings.idLen||8);
+  clearTimeout(dictTimer);
+  // dictation sometimes writes the ID straight in as characters, e.g. "54099B87"
+  if (dictating && /^[0-9a-f]+$/i.test(v.trim()) && v.trim().length >= need){
+    $("manual").value = v.trim().toUpperCase(); entryMethod = "Voice"; typedChanged();
+    dictating = false; voiceMsg(""); setTimeout(() => { setKb(false); showNato(false); }, 600);
+    return;
+  }
+  // dictated words ("five four zero … Bravo eight seven") become the ID after a short pause
+  if ((dictating || /\s/.test(v.trim())) && !/^\s*\(/.test(v) && typeof parseSpoken === "function"){
     const p = parseSpoken(v);
-    clearTimeout(dictTimer);
-    voiceMsg(p.id ? `Will enter: <b>${esc(p.id)}</b>` + (p.unknown.length ? `<br>Didn't understand: ${esc(p.unknown.join(", "))}` : "") : "");
+    voiceMsg(p.id ? `Will enter: <b>${esc(p.id)}</b>` + (p.unknown.length ? `<br>Didn't understand: ${esc(p.unknown.join(", "))}` : "")
+                  : (dictating ? "Listening to the keyboard microphone…" : ""));
     dictTimer = setTimeout(() => {
       if ($("manual").value !== v || !p.id) return;
       $("manual").value = p.id; entryMethod = "Voice"; typedChanged();
-      voiceMsg(`Heard: “${esc(v.trim())}”`);
+      voiceMsg(`Heard: “${esc(v.trim())}”` + (p.id.length < need ? `<br>Got ${p.id.length} of ${need}. Tap the 🎤 again and say the rest.` : ""));
+      if (p.id.length >= need){ dictating = false; setKb(false); showNato(false); }
     }, 1500);
     return;
   }
@@ -703,6 +711,7 @@ function drawPad(){
 $("pad").onclick = e => {
   const b = e.target.closest("button"); if (!b) return;
   if (voiceBusy()) stopVoice();
+  if (dictating){ dictating = false; $("micBtn").classList.remove("on"); $("micLabel").textContent = "Say the ID"; }
   if (b.dataset.k === "clr"){ voiceMsg(""); heardFinal = ""; }
   const k = b.dataset.k, m = $("manual");
   if (k==="sw"){ padMode = padMode==="num" ? "abc" : "num"; drawPad(); return; }
@@ -712,13 +721,18 @@ $("pad").onclick = e => {
   try{ navigator.vibrate && navigator.vibrate(10); }catch(_){}
   entryMethod = "Typed"; typedChanged();
 };
-$("kbToggle").onclick = () => {
-  kbMode = !kbMode; const m=$("manual");
+function setKb(on){
+  kbMode = on; const m=$("manual");
   m.readOnly = !kbMode; m.inputMode = kbMode ? "text" : "none";
   $("pad").hidden = kbMode;
   $("kbToggle").textContent = kbMode ? "Use big keypad instead" : "Use phone keyboard instead";
   if (kbMode) m.focus(); else m.blur();
-};
+  if (!kbMode && typeof showNato === "function" && typeof vState !== "undefined" && vState === "idle"){
+    showNato(false); dictating = false;
+    $("micBtn").classList.remove("on"); $("micLabel").textContent = "Say the ID";
+  }
+}
+$("kbToggle").onclick = () => setKb(!kbMode);
 
 /* ---- decoder (zxing-cpp compiled to WebAssembly) ---- */
 const READ_OPTS = {formats:["DataMatrix","QRCode"], tryHarder:true, tryRotate:true, tryInvert:true, textMode:"Plain", maxNumberOfSymbols:1};
@@ -1494,7 +1508,7 @@ $("modeSeg").onclick = e => { const b=e.target.closest("button"); if(!b) return;
 function updateTypeHint(){
   $("manualLabel").textContent = "Type the ID printed under the barcode";
   $("manual").placeholder = "e.g. 54099B87";
-  $("manualHint").innerHTML = (Speech && !window.LR_TEST)
+  $("manualHint").innerHTML = ((Speech || IS_IOS) && !window.LR_TEST)
     ? "Just the characters after <b>ID:</b>. Tap <b>Say the ID</b> and read it out, or use the keypad. Check the barcode against the label before scanning."
     : "Just the characters after <b>ID:</b>. Tap <b>ABC</b> for letters and <b>123</b> for numbers. Check the barcode against the label before scanning.";
 }
@@ -1605,10 +1619,7 @@ function uiVoice(){
 }
 function wire(r){
   r.lang = navigator.language && /^en/i.test(navigator.language) ? navigator.language : "en-AU";
-  // iPhones: continuous listening and live results are where repeat sessions go silent,
-  // so there each tap listens for one phrase. Other phones keep live, continuous listening.
-  if (IS_IOS){ r.continuous = false; r.interimResults = false; r.maxAlternatives = 1; }
-  else { r.interimResults = true; r.continuous = true; r.maxAlternatives = 5; }
+  r.interimResults = true; r.continuous = true; r.maxAlternatives = 5;
   const live = () => { if (r === recog && vState === "starting"){ vState = "listening"; clearTimeout(startWatch); uiVoice(); } };
   r.onstart = live; r.onaudiostart = live; r.onspeechstart = live;
   r.onresult = e => {
@@ -1667,7 +1678,21 @@ function stopVoice(){
   stopWatch = setTimeout(() => { if (r === recog && vState === "stopping"){ try{ r.abort(); }catch(e){} freshNext = true; vState = "idle"; uiVoice();
     if (/One moment/.test($("voiceMsg").textContent)) voiceMsg("Ready. Tap the microphone."); } }, 1200);
 }
+/* iPhone: the browser speech engine stops returning words after the first phrase (open WebKit
+   bugs), so on iPhones "Say the ID" uses the keyboard's own dictation microphone instead. */
+function startDictation(){
+  if (voiceBusy()) stopVoice();
+  $("manual").value = ""; entryMethod = "Voice"; render("", false);
+  heardFinal = ""; dictating = true;
+  setKb(true);
+  showNato(true);
+  $("micBtn").classList.add("on"); $("micLabel").textContent = "Now tap 🎤 on the keyboard";
+  setTimeout(() => { try{ $("manual").scrollIntoView({block:"start", behavior:"smooth"}); }catch(e){} }, 300);
+  voiceMsg("Now tap the <b>🎤</b> on the keyboard and read the ID out. The barcode appears when you stop.");
+}
+let dictating = false;
 function startVoice(){                       // runs directly from the tap
+  if (IS_IOS){ startDictation(); return; }
   if (vState === "starting" || vState === "listening"){ stopVoice(); return; }
   if (vState === "stopping"){                // previous session still closing: wait for it, then the user taps again
     voiceMsg("One moment… tap the microphone again in a second.");
@@ -1709,7 +1734,7 @@ function voiceFallback(){
   const b = document.getElementById("kbDictBtn");
   if (b) b.onclick = () => { if (!kbMode) $("kbToggle").click(); else $("manual").focus(); };
 }
-if (Speech && !window.LR_TEST){ $("micBtn").hidden = false; $("micBtn").onclick = startVoice; }
+if ((Speech || IS_IOS) && !window.LR_TEST){ $("micBtn").hidden = false; $("micBtn").onclick = startVoice; }
 $("tabScan").addEventListener("click", () => { if (voiceBusy()) stopVoice(); });
 updateTypeHint();
 
@@ -1732,7 +1757,7 @@ updateTypeHint();
 })();
 
 /* ---- version + colour theme ---- */
-const APP_VERSION = "9 Oct 2026 · v22";
+const APP_VERSION = "9 Oct 2026 · v23";
 $("appVer").textContent = "Label Rescan · " + APP_VERSION;
 const THEMES = {auto:1, light:1, dark:1};
 let theme = "auto"; try{ theme = localStorage.getItem("lr_theme") || "auto"; }catch(e){}
