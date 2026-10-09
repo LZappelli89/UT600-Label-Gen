@@ -89,6 +89,7 @@ input[type=text]{font-family:ui-monospace,Menlo,Consolas,monospace;letter-spacin
 .permhelp ol{margin:0 0 10px;padding-left:20px;font-size:14px;line-height:1.45}
 .permhelp p{font-size:13px;color:var(--muted);margin:0 0 10px}
 .kbdict{margin:8px 0 4px;border:0;border-radius:10px;padding:10px 14px;font-size:15px;font-weight:700;background:var(--accent);color:var(--accent-ink)}
+.voicelog{margin:8px 0 0;max-height:180px;overflow:auto;background:var(--field);border:1px solid var(--line);border-radius:8px;padding:8px;font:12px/1.4 ui-monospace,Menlo,monospace;color:var(--text);white-space:pre-wrap}
 .voicemsg{text-align:center;margin:8px 0 0}
 .voicemsg b{color:var(--text)}
 .pad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
@@ -204,6 +205,7 @@ header h1{white-space:nowrap}
         <div class="natogrid" id="natoGrid"></div>
       </div>
       <p class="hint voicemsg" id="voiceMsg" hidden></p>
+      <pre class="voicelog" id="voiceLog" hidden></pre>
       <div class="pad" id="pad" aria-label="Keypad"></div>
       <button class="sample" id="kbToggle" type="button">Use phone keyboard instead</button>
     </div>
@@ -293,6 +295,7 @@ header h1{white-space:nowrap}
     </div>
     <label class="chk"><input type="checkbox" id="sText" checked> Show text under barcode</label>
     <label class="chk"><input type="checkbox" id="sAutoFull"> Open full screen straight after a scan</label>
+    <label class="chk"><input type="checkbox" id="sVoiceDebug"> Show voice log (for troubleshooting)</label>
 
 
     <details class="permhelp" id="permHelp">
@@ -654,7 +657,7 @@ function tab(which){
   show(""); $("resultWrap").classList.add("hidden"); current=null;
   if (which==="type"){ stopCam(); render($("manual").value, false); drawPad(); }
 }
-$("tabScan").onclick = ()=>tab("scan"); $("tabType").onclick = ()=>{ tab("type"); if (typeof resetMicIfNeeded === "function") resetMicIfNeeded(); };
+$("tabScan").onclick = ()=>tab("scan"); $("tabType").onclick = ()=>tab("type");
 // A typed code is added to the session once it has stayed complete for 2.5 s,
 // so half-typed or mistyped IDs that get corrected straight away aren't logged.
 let typedTimer = 0, entryMethod = "Typed", typedPending = null;
@@ -721,7 +724,6 @@ $("pad").onclick = e => {
   const b = e.target.closest("button"); if (!b) return;
   if (voiceBusy()) stopVoice();
   if (b.dataset.k === "clr") flushTyped();
-  if (b.dataset.k === "clr") resetMicIfNeeded();
   if (dictating){ dictating = false; $("micBtn").classList.remove("on"); $("micLabel").textContent = "Say the ID"; }
   if (b.dataset.k === "clr"){ voiceMsg(""); heardFinal = ""; }
   const k = b.dataset.k, m = $("manual");
@@ -1420,7 +1422,7 @@ function handleDecoded(text, method){
 }
 $("startBtn").onclick = startCam; $("stopBtn").onclick = releaseCam;
 $("againBtn").onclick = ()=>{ flushTyped(); if (voiceBusy()) { stopVoice(); voiceMsg(""); }
-  resetMicIfNeeded(); if ($("paneType").classList.contains("hidden")) {
+  if ($("paneType").classList.contains("hidden")) {
     if (window.LR_TEST){ $("photoInput").click(); return; }   // test link: no live camera
     lastScan.until = Date.now() + 5000; scrollTo({top:0,behavior:"smooth"}); startCam(); } else { $("manual").value=""; render("",false); padMode="num"; drawPad(); scrollTo({top:0,behavior:"smooth"}); } };
 document.addEventListener("visibilitychange", ()=>{ if (document.hidden){ releaseCam(); if (voiceBusy()) stopVoice(); } });
@@ -1499,12 +1501,13 @@ function openSettings(){
   $("sLetters").value=settings.letters||DEF.letters;
   $("sPreset").value=settings.preset; $("sIdLen").value=settings.idLen; syncPreset();
   $("sFormat").value=settings.format; $("sFields").value=settings.fields; $("sIncludeAI").checked=settings.includeAI;
-  $("sText").checked=settings.text; $("sAutoFull").checked=settings.autoFull;
+  $("sText").checked=settings.text; $("sAutoFull").checked=settings.autoFull; $("sVoiceDebug").checked=!!settings.voiceDebug;
   $("sheet").classList.remove("hidden");
 }
 function closeSettings(){
   settings = {letters:($("sLetters").value.toUpperCase().replace(/[^A-Z]/g,"")||DEF.letters), preset:$("sPreset").value, idLen:Math.max(1, parseInt($("sIdLen").value,10)||8), format:$("sFormat").value, fields:$("sFields").value.trim(), includeAI:$("sIncludeAI").checked,
-    text:$("sText").checked, autoFull:$("sAutoFull").checked};
+    text:$("sText").checked, autoFull:$("sAutoFull").checked, voiceDebug:$("sVoiceDebug").checked};
+  if (typeof vlog === "function"){ const el = document.getElementById("voiceLog"); el.hidden = !settings.voiceDebug; if (settings.voiceDebug) vlog("voice log on · " + navigator.userAgent.replace(/^.*?\(/, "(").slice(0, 80)); }
   save("lr_settings_v3", settings); $("sheet").classList.add("hidden"); drawPad();
   rerender();
 }
@@ -1611,64 +1614,59 @@ function bestOf(alts){
   }
   return best;
 }
-/* Voice session states: idle -> starting -> listening -> stopping -> idle.
-   Lessons from iPhones built in here:
-   - start() must run straight from the tap (no waiting first), or the iPhone ignores it.
-   - one recogniser is reused; a new session only starts once the old one has fully ended.
-   - stop() is never called from inside a result event, and results are ignored unless a
-     session is live, so a late result can't overwrite what's typed next.
-   - if a start doesn't come alive within a few seconds, the next tap uses a fresh recogniser.
-   - the camera is released first, as an open camera can stop the microphone working. */
-let recog = null, vState = "idle", freshNext = false, startWatch = 0, stopWatch = 0, hearWatch = 0;
+/* Voice engine (v26)
+   iPhones can keep the microphone after being asked to stop(), and a new listen then hears
+   nothing until something takes the mic away. So when an ID is complete (or you stop, Clear,
+   Scan next or switch tab) the app fully closes the microphone: abort() (the forceful stop),
+   disconnect it, and on iPhones destroy the hidden mini-page it ran in. Every listen gets a
+   brand-new recogniser. Settings ⚙ → "Show voice log" lists what the phone actually does. */
+let recog = null, vState = "idle", startWatch = 0, hearWatch = 0, closedAt = 0, lastClosed = null;
 const IS_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
-let lastVoice = {id:"", said:""}, gotResult = false, voiceBase = "", voiceWins = 0;
-const voiceRefresh = false; try{ localStorage.removeItem("lr_voice_refresh"); }catch(e){}
-/* iPhone microphone reset.
-   After a listen, iPhones can leave the audio session (the phone's shared microphone channel)
-   stuck, so the next listen hears nothing. Using the keyboard 🎤 clears it, because iOS opens and
-   closes the microphone properly. This does the same from the app: switch the audio session type,
-   briefly open and close the microphone, and play a silent blip. It runs on Clear / Scan next
-   (and before a listen if those weren't tapped). */
-let micDirty = false, micResetting = null, silentAfterReset = false;
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-function resetMic(){
-  if (micResetting) return micResetting;
-  micDirty = false;
-  micResetting = (async () => {
-    const as = navigator.audioSession;
-    try{ if (as){ as.type = "playback"; as.type = "play-and-record"; } }catch(e){}
-    try{
-      const s = await navigator.mediaDevices.getUserMedia({audio:true, video:false});
-      await sleep(250);
-      s.getTracks().forEach(t => t.stop());
-    }catch(e){}
-    try{
-      const AC = window.AudioContext || window.webkitAudioContext;
-      if (AC){ const ac = new AC(); const src = ac.createBufferSource(); src.buffer = ac.createBuffer(1, 1, 22050);
-        src.connect(ac.destination); src.start(0); await sleep(120); await ac.close(); }
-    }catch(e){}
-    try{ if (as) as.type = "auto"; }catch(e){}
-    await sleep(150);
-    micResetting = null;
-  })();
-  return micResetting;
-}
-// call from any tap that moves on to the next label
-function resetMicIfNeeded(){ if (IS_IOS && micDirty && !voiceBusy()) resetMic(); }
+let lastVoice = {id:"", said:""}, gotResult = false, voiceBase = "", voiceWins = 0, sessionNo = 0;
 const voiceBusy = () => vState !== "idle";
+const vlogLines = [], vlogT0 = Date.now();
+function vlog(m){
+  vlogLines.push(((Date.now() - vlogT0)/1000).toFixed(1) + "s  " + m);
+  if (vlogLines.length > 80) vlogLines.shift();
+  const el = document.getElementById("voiceLog");
+  if (el && settings.voiceDebug){ el.hidden = false; el.textContent = vlogLines.join("\n"); el.scrollTop = el.scrollHeight; }
+}
 function uiVoice(){
   const on = vState === "starting" || vState === "listening";
   $("micBtn").classList.toggle("on", on);
   $("micLabel").textContent = vState === "starting" ? "Starting… speak when ready" : vState === "listening" ? "Listening… tap to stop" : "Say the ID";
   showNato(on);
 }
+function newRecognizer(){
+  let C = Speech, f = null;
+  if (IS_IOS){
+    try{
+      f = document.createElement("iframe");
+      f.setAttribute("allow", "microphone"); f.setAttribute("aria-hidden", "true"); f.tabIndex = -1;
+      f.style.cssText = "position:fixed;left:-10px;top:-10px;width:1px;height:1px;opacity:0;border:0;pointer-events:none";
+      document.body.appendChild(f);
+      const w = f.contentWindow, c = w && (w.SpeechRecognition || w.webkitSpeechRecognition);
+      if (c) C = c; else { f.remove(); f = null; }
+    }catch(e){ if (f){ try{ f.remove(); }catch(_){} } f = null; }
+  }
+  const r = new C(); r.__frame = f; r.__n = ++sessionNo; wire(r); return r;
+}
+function dropFrame(r, delay){
+  const f = r.__frame; if (!f) return; r.__frame = null;
+  setTimeout(() => { try{ f.remove(); }catch(e){} vlog("#" + r.__n + " mini-page removed"); }, delay);
+}
 function wire(r){
+  const tag = "#" + r.__n + " ";
   r.lang = navigator.language && /^en/i.test(navigator.language) ? navigator.language : "en-AU";
   r.interimResults = true; r.continuous = true; r.maxAlternatives = 5;
   const live = () => { if (r === recog && vState === "starting"){ vState = "listening"; clearTimeout(startWatch); uiVoice(); } };
-  r.onstart = live; r.onaudiostart = live; r.onspeechstart = live;
+  for (const ev of ["start","audiostart","soundstart","speechstart","speechend","soundend","audioend","nomatch"]){
+    r["on" + ev] = () => { vlog(tag + ev); if (/start$/.test(ev)) live(); };
+  }
   r.onresult = e => {
-    if (r !== recog || (vState !== "listening" && vState !== "starting")) return;   // late result: ignore
+    const last = e.results[e.results.length - 1];
+    vlog(tag + "result “" + (last && last[0] ? last[0].transcript : "") + "”" + (last && last.isFinal ? " final" : ""));
+    if (r !== recog || vState === "idle") return;            // from a closed session: ignore
     live();
     let prefix = "", lastAlts = [""];
     for (let i = 0; i < e.results.length; i++){
@@ -1676,79 +1674,52 @@ function wire(r){
       if (i === e.results.length - 1) lastAlts = Array.from(x).map(y => y.transcript);
       else prefix = joinT(prefix, x[0].transcript);
     }
-    heardFinal = joinT(voiceBase, prefix);   // voiceBase = what was said earlier, when continuing an ID
+    heardFinal = joinT(voiceBase, prefix);
     const b = bestOf(lastAlts);
     if (!gotResult) voiceWins++;
-    silentAfterReset = false;
     gotResult = true; clearTimeout(hearWatch);
     lastVoice = {id: b.id, said: b.said};
     $("manual").value = b.id; padMode = "num"; drawPad(); entryMethod = "Voice"; typedChanged();
     voiceMsg(`Heard: “${esc(b.said)}”` + (b.unknown.length ? `<br>Didn't understand: ${esc(b.unknown.join(", "))}` : ""));
-    if (b.id.length >= Math.max(1, +settings.idLen||8) && !b.unknown.length) setTimeout(stopVoice, 0);
+    if (b.id.length >= Math.max(1, +settings.idLen||8) && !b.unknown.length) setTimeout(() => { if (r === recog) closeMic("ID complete"); }, 0);
   };
   r.onerror = e => {
+    vlog(tag + "error " + e.error);
     if (r !== recog || e.error === "aborted") return;
     const m = {"not-allowed":"Microphone blocked. Allow microphone (and speech recognition) for this site. See Settings ⚙ → Stop the Allow pop-ups.",
                "service-not-allowed":"Voice entry isn't allowed in this browser. Try Safari or Chrome.",
                "no-speech":"Didn't hear anything. Tap the microphone and try again.",
                "network":"Voice entry needs an internet connection on this phone.",
-               "audio-capture":"The microphone is busy or missing. Close other apps using it and try again."}[e.error];
+               "audio-capture":"The microphone is busy. Tap the microphone again in a second."}[e.error];
+    closeMic("error " + e.error);
     if (m) voiceMsg(m);
-    if (e.error !== "no-speech") freshNext = true;
-    stopVoice();
   };
   r.onend = () => {
+    vlog(tag + "end");
     r.__ended = true;
-    if (r !== recog) return;
-    clearTimeout(stopWatch); clearTimeout(startWatch); clearTimeout(voiceTimer); clearTimeout(hearWatch);
-    vState = "idle"; uiVoice();
-    if (IS_IOS) micDirty = true;
-    const need = Math.max(1, +settings.idLen||8), have = $("manual").value.length;
-    if (gotResult && entryMethod === "Voice" && have > 0 && have < need)
-      voiceMsg(`Got ${have} of ${need}. Tap the microphone and say the rest.`);
+    if (r === recog){
+      clearTimeout(startWatch); clearTimeout(hearWatch); clearTimeout(voiceTimer);
+      recog = null; vState = "idle"; closedAt = Date.now(); lastClosed = r; uiVoice();
+      const need = Math.max(1, +settings.idLen||8), have = $("manual").value.length;
+      if (gotResult && entryMethod === "Voice" && have > 0 && have < need) voiceMsg(`Got ${have} of ${need}. Tap the microphone and say the rest.`);
+    }
     if (/One moment/.test($("voiceMsg").textContent)) voiceMsg("Ready. Tap the microphone.");
+    dropFrame(r, 300);
   };
 }
-/* iPhones: speech recognition works for the first listen after a page loads, then goes quiet.
-   So each listen runs inside a brand-new invisible mini-page (iframe), which the phone treats
-   as a fresh page. Old mini-pages are removed once finished. */
-let voiceFrame = null;
-function freshSpeechCtor(){
-  if (!IS_IOS) return Speech;
-  try{
-    if (voiceFrame){ const old = voiceFrame; setTimeout(() => old.remove(), 1500); }
-    const f = document.createElement("iframe");
-    f.setAttribute("allow", "microphone");
-    f.setAttribute("aria-hidden", "true"); f.tabIndex = -1;
-    f.style.cssText = "position:fixed;left:-10px;top:-10px;width:1px;height:1px;opacity:0;border:0;pointer-events:none";
-    document.body.appendChild(f);
-    const w = f.contentWindow, C = w && (w.SpeechRecognition || w.webkitSpeechRecognition);
-    if (C){ voiceFrame = f; return C; }
-    f.remove();
-  }catch(e){}
-  return Speech;
-}
-function getRecog(){
-  if (!recog || freshNext){
-    // only cancel the old one if it's still running: touching a finished one can re-jam the microphone
-    if (recog){ const old = recog; recog = null; if (!old.__ended){ try{ old.abort(); }catch(e){} } }
-    freshNext = false; const C = freshSpeechCtor(); recog = new C(); wire(recog);
+// Fully close the microphone now.
+function closeMic(why){
+  clearTimeout(startWatch); clearTimeout(hearWatch); clearTimeout(voiceTimer);
+  const r = recog; recog = null; vState = "idle"; closedAt = Date.now();
+  if (r){
+    lastClosed = r;
+    vlog("#" + r.__n + " close (" + why + ")");
+    if (!r.__ended){ try{ r.abort(); vlog("#" + r.__n + " abort() sent"); }catch(e){ vlog("#" + r.__n + " abort failed " + e.name); } }
+    dropFrame(r, 600);
   }
-  return recog;
+  uiVoice();
 }
-function stopVoice(){
-  clearTimeout(voiceTimer); clearTimeout(startWatch);
-  if (vState === "idle" || vState === "stopping"){ uiVoice(); return; }
-  vState = "stopping"; uiVoice();
-  const r = recog;
-  try{ r.stop(); }catch(e){}
-  // if the phone never says it has ended, give up on this recogniser and use a new one next time
-  clearTimeout(stopWatch);
-  stopWatch = setTimeout(() => { if (r === recog && vState === "stopping"){ try{ r.abort(); }catch(e){} freshNext = true; vState = "idle"; uiVoice(); if (IS_IOS) micDirty = true;
-    if (/One moment/.test($("voiceMsg").textContent)) voiceMsg("Ready. Tap the microphone."); } }, 1200);
-}
-/* iPhone: the browser speech engine stops returning words after the first phrase (open WebKit
-   bugs), so on iPhones "Say the ID" uses the keyboard's own dictation microphone instead. */
+function stopVoice(){ closeMic("stopped"); }
 function startDictation(){
   if (voiceBusy()) stopVoice();
   $("manual").value = ""; entryMethod = "Voice"; render("", false);
@@ -1760,14 +1731,12 @@ function startDictation(){
   voiceMsg("Now tap the <b>🎤</b> on the keyboard and read the ID out, then tap <b>Done</b> on the keyboard.");
 }
 let dictating = false;
-async function startVoice(){                 // runs from the tap
-  if (vState === "starting" || vState === "listening"){ stopVoice(); return; }
-  if (IS_IOS && vState === "idle" && (micDirty || micResetting)){
-    $("micBtn").classList.add("on"); $("micLabel").textContent = "Resetting microphone…";
-    await resetMic();
-  }
-  if (vState === "stopping"){                // previous session still closing: wait for it, then the user taps again
+function startVoice(){                       // runs directly from the tap
+  if (vState !== "idle"){ closeMic("tapped to stop"); return; }
+  // the last session was only just closed and hasn't confirmed it's finished: give it a moment
+  if (lastClosed && !lastClosed.__ended && Date.now() - closedAt < 1200){
     voiceMsg("One moment… tap the microphone again in a second.");
+    setTimeout(() => { if (/One moment/.test($("voiceMsg").textContent)) voiceMsg("Ready. Tap the microphone."); }, 1200 - (Date.now() - closedAt));
     return;
   }
   if (typeof releaseCam === "function" && !running) releaseCam();
@@ -1775,35 +1744,26 @@ async function startVoice(){                 // runs from the tap
   const cont = entryMethod === "Voice" && cur && cur === lastVoice.id && cur.length < need;
   heardFinal = voiceBase = cont ? lastVoice.said : "";
   gotResult = false;
-  freshNext = true;                          // a brand-new recogniser for every ID: some phones only allow one session each
-  let r = getRecog(), ok = false;
-  try{ r.start(); ok = true; }catch(e){
-    freshNext = true; r = getRecog();       // reused recogniser refused: try a brand-new one
-    try{ r.start(); ok = true; }catch(e2){}
+  let r = null;
+  try{
+    r = newRecognizer(); recog = r;
+    r.start();
+    vlog("#" + r.__n + " start() sent" + (r.__frame ? " (mini-page)" : ""));
+  }catch(e){
+    vlog("start failed: " + e.name + " " + e.message);
+    if (r) dropFrame(r, 0);
+    recog = null; vState = "idle"; uiVoice();
+    voiceMsg("Voice entry couldn't start. Tap the microphone again."); return;
   }
-  if (!ok){ freshNext = true; voiceMsg("Voice entry couldn't start. Tap the microphone again."); uiVoice(); return; }
   vState = "starting"; uiVoice();
   voiceMsg(cont ? `Carry on: say the rest after <b>${esc(cur)}</b>` : "Say each character, e.g. <b>five four zero nine nine Bravo eight seven</b>");
-  // the phone says it's listening but sends nothing back: offer the keyboard microphone instead
-  clearTimeout(hearWatch);
-  hearWatch = setTimeout(() => {
-    if (r === recog && (vState === "listening" || vState === "starting") && !gotResult){
-      try{ r.abort(); }catch(e){} freshNext = true; vState = "idle"; uiVoice();
-      // heard nothing: reset the microphone and ask for one more tap; if that also fails, offer the keyboard 🎤
-      if (IS_IOS && !silentAfterReset){
-        silentAfterReset = true; resetMic();
-        voiceMsg("Microphone reset. Tap <b>Say the ID</b> again and read the ID out.");
-      } else { silentAfterReset = false; voiceFallback(); }
-    }
-  }, 7000);
-  clearTimeout(startWatch);
   startWatch = setTimeout(() => {
-    if (r === recog && vState === "starting"){
-      try{ r.abort(); }catch(e){} freshNext = true; vState = "idle"; uiVoice();
-      voiceMsg("Voice didn't start. Tap the microphone to try again.");
-    }
+    if (r === recog && vState === "starting"){ vlog("#" + r.__n + " never started"); closeMic("didn't start"); voiceMsg("Voice didn't start. Tap the microphone to try again."); }
   }, 5000);
-  clearTimeout(voiceTimer); voiceTimer = setTimeout(stopVoice, 25000);
+  hearWatch = setTimeout(() => {
+    if (r === recog && !gotResult){ vlog("#" + r.__n + " heard nothing in 8 s"); closeMic("heard nothing"); voiceFallback(); }
+  }, 8000);
+  clearTimeout(voiceTimer); voiceTimer = setTimeout(() => { if (r === recog) closeMic("time limit"); }, 25000);
 }
 function voiceFallback(){
   voiceMsg(`Voice isn't responding on this phone right now.<br><button type="button" class="kbdict" id="kbDictBtn">Use the keyboard microphone instead</button><br><span>Tap it, then tap the 🎤 on your keyboard and read the ID out.</span>`);
@@ -1833,7 +1793,7 @@ updateTypeHint();
 })();
 
 /* ---- version + colour theme ---- */
-const APP_VERSION = "9 Oct 2026 · v25";
+const APP_VERSION = "9 Oct 2026 · v26";
 $("appVer").textContent = "Label Rescan · " + APP_VERSION;
 const THEMES = {auto:1, light:1, dark:1};
 let theme = "auto"; try{ theme = localStorage.getItem("lr_theme") || "auto"; }catch(e){}
@@ -1853,6 +1813,7 @@ applyTheme(theme);
 
 drawPad();
 drawSession();
+if (settings.voiceDebug && typeof vlog === "function"){ document.getElementById("voiceLog").hidden = false; vlog("voice log on · v26"); }
 try{
   const rs = JSON.parse(sessionStorage.getItem("lr_restore") || "null");
   if (rs){ sessionStorage.removeItem("lr_restore"); if (rs.tab === "type"){ tab("type"); if (rs.note) voiceMsg(rs.note); } }

@@ -53,7 +53,9 @@ Open the **Type code** tab and enter the characters printed after **ID:** on the
 
   For example: *"five four zero nine nine Bravo eight seven"*. "Double nine" and "oh" for zero also work. The app stops listening once the ID is complete.
 
-  **On iPhone**, after a listen the phone can leave its microphone channel (the audio session) stuck, so the next listen hears nothing. This is an Apple/WebKit bug. The app resets the microphone automatically when you tap **Clear** or **Scan next**, or just before listening if you didn't, so every **Say the ID** starts clean. If a listen still hears nothing, it says *Microphone reset. Tap Say the ID again*. If that fails too, it offers the keyboard 🎤 instead.
+  **On iPhone**, the phone can hold on to the microphone after being asked to stop, so the next listen hears nothing (an Apple/WebKit bug). The app fully closes the microphone as soon as an ID is complete, and also on **Stop**, **Clear**, **Scan next** or a tab change. It uses the forceful "abort" and destroys the hidden page the listen ran in, and every listen starts with a brand-new recognizer. If a listen still hears nothing for 8 seconds, the app offers the keyboard 🎤 instead.
+
+  **Voice log:** **⚙ Settings → Show voice log** lists, under the microphone button, exactly what the phone did on each listen (started, heard, ended, closed). Turn it on and take a screenshot if voice misbehaves.
 
 Always check the ID on screen against the label before scanning.
 
@@ -80,7 +82,7 @@ The camera and microphone only work over **https**, which GitHub Pages provides.
 
 ### Updating
 
-Upload the new `index.html` over the old one and **Commit changes**. The version shows at the bottom of the main screen (for example *Label Rescan · 9 Oct 2026 · v25*). If a phone still shows the old version after a few minutes, fully close the app and reopen it, or add `?v=25` to the end of the link.
+Upload the new `index.html` over the old one and **Commit changes**. The version shows at the bottom of the main screen (for example *Label Rescan · 9 Oct 2026 · v26*). If a phone still shows the old version after a few minutes, fully close the app and reopen it, or add `?v=26` to the end of the link.
 
 ---
 
@@ -160,7 +162,7 @@ If the **Say the ID** button is missing, that browser doesn't support voice. Try
 |---|---|
 | Camera won't open | Allow camera access for the site (see *Stopping the Allow pop-ups*), and make sure you're on the `https://` link |
 | Asked to Allow every time | See *Stopping the Allow pop-ups* |
-| Voice only works for the first ID (iPhone) | Fixed in v25. Update the app. **Clear** and **Scan next** now reset the microphone |
+| Voice only works for the first ID (iPhone) | Update to v26 or later, which fully closes the microphone after each ID. If it still happens, turn on **⚙ Settings → Show voice log**, try two IDs, and screenshot the log |
 | *One moment…* when tapping the microphone | The previous ID is still closing. Tap again when it says *Ready* |
 | Code won't read | Flatten the label, avoid glare, fill most of the box with the code; or use **Scan from photo**; or enter the ID by hand |
 | Field scanner won't read the phone screen | Turn screen brightness up, and hold the scanner a little further from the screen at a slight angle |
