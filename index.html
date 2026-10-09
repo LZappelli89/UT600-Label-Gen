@@ -50,15 +50,17 @@ input[type=text]{font-family:ui-monospace,Menlo,Consolas,monospace;letter-spacin
 .hint{color:var(--muted);font-size:13px;margin:8px 0 0}
 #reader{width:min(68vw,260px);aspect-ratio:1;margin:0 auto;border-radius:16px;overflow:hidden;background:#000;position:relative}
 #reader video{width:100%!important;height:100%!important;object-fit:cover;display:block}
-.guide{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
-.gtile{margin:0;border:2px solid var(--line);border-radius:12px;padding:10px 8px 8px;display:flex;flex-direction:column;align-items:center;gap:8px;background:var(--field)}
-.gtile.yes{border-color:var(--ok)}
-.gtile.no{border-color:var(--bad)}
-.gtile.no .gimg{opacity:.55}
-.gimg{height:64px;width:64px;border-radius:4px}
-.gimg.wide{width:auto;aspect-ratio:auto;max-width:100%}
-.gtile figcaption{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;text-align:left;line-height:1.2}
-.badge{flex:none;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:15px;font-weight:800;color:#fff}
+/* "what to scan" hint: deliberately flat (no borders, no tile backgrounds) so it doesn't look tappable */
+.guidehd{margin:0 0 6px;font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.guide{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:0 0 14px;padding-bottom:12px;border-bottom:1px solid var(--line);pointer-events:none;user-select:none;-webkit-user-select:none}
+.gtile{margin:0;display:flex;align-items:center;gap:8px;min-width:0}
+.gpic{position:relative;flex:none;line-height:0}
+.gimg{height:40px;width:40px;border-radius:3px}
+.gimg.wide{width:auto;height:34px}
+.gtile.no .gimg{opacity:.5}
+.gtile figcaption{font-size:13px;line-height:1.25;color:var(--muted)}
+.gtile.yes figcaption{color:var(--text)}
+.badge{position:absolute;right:-7px;bottom:-7px;width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:800;color:#fff;box-shadow:0 0 0 2px var(--panel)}
 .badge.ok{background:var(--ok)}
 .badge.bad{background:var(--bad)}
 .camtools{display:flex;gap:8px;margin-top:10px;align-items:center}
@@ -116,13 +118,17 @@ code.raw{display:block;background:var(--field);border-radius:8px;padding:10px;wo
   color:var(--text);padding:11px 2px;font-family:ui-monospace,monospace;font-size:14px;word-break:break-all}
 .hist small{color:var(--muted);font-family:system-ui}
 /* full screen view */
-#full{position:fixed;inset:0;background:var(--paper);z-index:50;display:flex;align-items:center;justify-content:center}
-#full{overflow:hidden}
-#full .next{position:fixed;left:16px;right:16px;bottom:calc(16px + env(safe-area-inset-bottom));z-index:51;border:0;border-radius:14px;
-  padding:16px;font-size:18px;font-weight:700;background:var(--accent);color:var(--accent-ink)}
-#full .inner{position:absolute;left:50%;top:50%;display:flex;flex-direction:column;align-items:center}
-#full .hr{font-size:20px}
-#full .close{position:fixed;top:calc(12px + env(safe-area-inset-top));right:12px;background:var(--ink);color:var(--paper);border:0;border-radius:20px;padding:10px 16px;font-size:15px;z-index:51}
+/* always plain white with a black barcode, whatever the colour theme; the stage stays portrait
+   even if the phone is turned sideways (it's counter-rotated, see layoutFull) */
+#full{position:fixed;inset:0;background:#fff;z-index:50;overflow:hidden;touch-action:none}
+#full .stage{position:absolute;left:50%;top:50%;background:#fff;color:#000;transform-origin:50% 50%}
+#full .inner{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center}
+#full .hr{font-size:20px;color:#000}
+#full .fbtns{position:absolute;left:16px;right:16px;bottom:calc(16px + env(safe-area-inset-bottom));display:flex;gap:12px}
+#full .fbtns button{flex:1;border:0;border-radius:14px;padding:18px 10px;font-size:18px;font-weight:700;min-height:60px}
+#full .stage.rot .fbtns{bottom:16px}
+#full .fbtns .sec{background:#e9ecf1;color:#111}
+#full .fbtns .next{background:var(--accent);color:var(--accent-ink)}
 /* settings sheet */
 #sheet{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:40;display:flex;align-items:flex-end}
 #sheet .panel{background:var(--panel);width:100%;max-height:88dvh;overflow:auto;border-radius:18px 18px 0 0;
@@ -168,9 +174,10 @@ header h1{white-space:nowrap}
   <!-- SCAN -->
   <section id="paneScan">
     <div class="card">
+      <p class="guidehd">What to scan</p>
       <div class="guide" aria-label="What to scan">
-        <figure class="gtile yes"><svg viewBox="-1 -1 16 16" class="gimg" aria-hidden="true" shape-rendering="crispEdges"><rect x="-1" y="-1" width="16" height="16" fill="var(--paper)"/><g fill="var(--ink)"><rect x="0" y="0" width="1" height="1"/><rect x="2" y="0" width="1" height="1"/><rect x="4" y="0" width="1" height="1"/><rect x="6" y="0" width="1" height="1"/><rect x="8" y="0" width="1" height="1"/><rect x="10" y="0" width="1" height="1"/><rect x="12" y="0" width="1" height="1"/><rect x="0" y="1" width="1" height="1"/><rect x="1" y="1" width="1" height="1"/><rect x="2" y="1" width="1" height="1"/><rect x="4" y="1" width="1" height="1"/><rect x="6" y="1" width="1" height="1"/><rect x="7" y="1" width="1" height="1"/><rect x="9" y="1" width="1" height="1"/><rect x="10" y="1" width="1" height="1"/><rect x="11" y="1" width="1" height="1"/><rect x="12" y="1" width="1" height="1"/><rect x="13" y="1" width="1" height="1"/><rect x="0" y="2" width="1" height="1"/><rect x="1" y="2" width="1" height="1"/><rect x="3" y="2" width="1" height="1"/><rect x="4" y="2" width="1" height="1"/><rect x="8" y="2" width="1" height="1"/><rect x="10" y="2" width="1" height="1"/><rect x="12" y="2" width="1" height="1"/><rect x="0" y="3" width="1" height="1"/><rect x="1" y="3" width="1" height="1"/><rect x="2" y="3" width="1" height="1"/><rect x="3" y="3" width="1" height="1"/><rect x="5" y="3" width="1" height="1"/><rect x="8" y="3" width="1" height="1"/><rect x="10" y="3" width="1" height="1"/><rect x="11" y="3" width="1" height="1"/><rect x="12" y="3" width="1" height="1"/><rect x="13" y="3" width="1" height="1"/><rect x="0" y="4" width="1" height="1"/><rect x="2" y="4" width="1" height="1"/><rect x="3" y="4" width="1" height="1"/><rect x="5" y="4" width="1" height="1"/><rect x="6" y="4" width="1" height="1"/><rect x="9" y="4" width="1" height="1"/><rect x="0" y="5" width="1" height="1"/><rect x="2" y="5" width="1" height="1"/><rect x="4" y="5" width="1" height="1"/><rect x="5" y="5" width="1" height="1"/><rect x="7" y="5" width="1" height="1"/><rect x="9" y="5" width="1" height="1"/><rect x="13" y="5" width="1" height="1"/><rect x="0" y="6" width="1" height="1"/><rect x="2" y="6" width="1" height="1"/><rect x="6" y="6" width="1" height="1"/><rect x="9" y="6" width="1" height="1"/><rect x="11" y="6" width="1" height="1"/><rect x="0" y="7" width="1" height="1"/><rect x="4" y="7" width="1" height="1"/><rect x="5" y="7" width="1" height="1"/><rect x="7" y="7" width="1" height="1"/><rect x="8" y="7" width="1" height="1"/><rect x="9" y="7" width="1" height="1"/><rect x="10" y="7" width="1" height="1"/><rect x="11" y="7" width="1" height="1"/><rect x="13" y="7" width="1" height="1"/><rect x="0" y="8" width="1" height="1"/><rect x="1" y="8" width="1" height="1"/><rect x="2" y="8" width="1" height="1"/><rect x="3" y="8" width="1" height="1"/><rect x="5" y="8" width="1" height="1"/><rect x="6" y="8" width="1" height="1"/><rect x="11" y="8" width="1" height="1"/><rect x="12" y="8" width="1" height="1"/><rect x="0" y="9" width="1" height="1"/><rect x="1" y="9" width="1" height="1"/><rect x="4" y="9" width="1" height="1"/><rect x="5" y="9" width="1" height="1"/><rect x="6" y="9" width="1" height="1"/><rect x="7" y="9" width="1" height="1"/><rect x="10" y="9" width="1" height="1"/><rect x="11" y="9" width="1" height="1"/><rect x="12" y="9" width="1" height="1"/><rect x="13" y="9" width="1" height="1"/><rect x="0" y="10" width="1" height="1"/><rect x="1" y="10" width="1" height="1"/><rect x="8" y="10" width="1" height="1"/><rect x="0" y="11" width="1" height="1"/><rect x="1" y="11" width="1" height="1"/><rect x="2" y="11" width="1" height="1"/><rect x="3" y="11" width="1" height="1"/><rect x="5" y="11" width="1" height="1"/><rect x="6" y="11" width="1" height="1"/><rect x="7" y="11" width="1" height="1"/><rect x="8" y="11" width="1" height="1"/><rect x="9" y="11" width="1" height="1"/><rect x="10" y="11" width="1" height="1"/><rect x="11" y="11" width="1" height="1"/><rect x="12" y="11" width="1" height="1"/><rect x="13" y="11" width="1" height="1"/><rect x="0" y="12" width="1" height="1"/><rect x="1" y="12" width="1" height="1"/><rect x="2" y="12" width="1" height="1"/><rect x="3" y="12" width="1" height="1"/><rect x="6" y="12" width="1" height="1"/><rect x="7" y="12" width="1" height="1"/><rect x="8" y="12" width="1" height="1"/><rect x="9" y="12" width="1" height="1"/><rect x="10" y="12" width="1" height="1"/><rect x="0" y="13" width="1" height="1"/><rect x="1" y="13" width="1" height="1"/><rect x="2" y="13" width="1" height="1"/><rect x="3" y="13" width="1" height="1"/><rect x="4" y="13" width="1" height="1"/><rect x="5" y="13" width="1" height="1"/><rect x="6" y="13" width="1" height="1"/><rect x="7" y="13" width="1" height="1"/><rect x="8" y="13" width="1" height="1"/><rect x="9" y="13" width="1" height="1"/><rect x="10" y="13" width="1" height="1"/><rect x="11" y="13" width="1" height="1"/><rect x="12" y="13" width="1" height="1"/><rect x="13" y="13" width="1" height="1"/></g></svg><figcaption><span class="badge ok" aria-hidden="true">✓</span>Scan the square code</figcaption></figure>
-        <figure class="gtile no"><svg viewBox="0 0 53 32" class="gimg wide" aria-hidden="true" shape-rendering="crispEdges"><rect width="53" height="32" fill="var(--paper)"/><g fill="var(--ink)"><rect x="2" y="3" width="2" height="26"/><rect x="5" y="3" width="1" height="26"/><rect x="9" y="3" width="1" height="26"/><rect x="12" y="3" width="1" height="26"/><rect x="14" y="3" width="2" height="26"/><rect x="19" y="3" width="1" height="26"/><rect x="21" y="3" width="2" height="26"/><rect x="24" y="3" width="3" height="26"/><rect x="28" y="3" width="2" height="26"/><rect x="32" y="3" width="1" height="26"/><rect x="34" y="3" width="3" height="26"/><rect x="38" y="3" width="2" height="26"/><rect x="41" y="3" width="1" height="26"/><rect x="44" y="3" width="3" height="26"/><rect x="48" y="3" width="1" height="26"/></g></svg><figcaption><span class="badge bad" aria-hidden="true">✕</span>Not the striped barcode</figcaption></figure>
+        <figure class="gtile yes"><span class="gpic"><svg viewBox="-1 -1 16 16" class="gimg" aria-hidden="true" shape-rendering="crispEdges"><rect x="-1" y="-1" width="16" height="16" fill="var(--paper)"/><g fill="var(--ink)"><rect x="0" y="0" width="1" height="1"/><rect x="2" y="0" width="1" height="1"/><rect x="4" y="0" width="1" height="1"/><rect x="6" y="0" width="1" height="1"/><rect x="8" y="0" width="1" height="1"/><rect x="10" y="0" width="1" height="1"/><rect x="12" y="0" width="1" height="1"/><rect x="0" y="1" width="1" height="1"/><rect x="1" y="1" width="1" height="1"/><rect x="2" y="1" width="1" height="1"/><rect x="4" y="1" width="1" height="1"/><rect x="6" y="1" width="1" height="1"/><rect x="7" y="1" width="1" height="1"/><rect x="9" y="1" width="1" height="1"/><rect x="10" y="1" width="1" height="1"/><rect x="11" y="1" width="1" height="1"/><rect x="12" y="1" width="1" height="1"/><rect x="13" y="1" width="1" height="1"/><rect x="0" y="2" width="1" height="1"/><rect x="1" y="2" width="1" height="1"/><rect x="3" y="2" width="1" height="1"/><rect x="4" y="2" width="1" height="1"/><rect x="8" y="2" width="1" height="1"/><rect x="10" y="2" width="1" height="1"/><rect x="12" y="2" width="1" height="1"/><rect x="0" y="3" width="1" height="1"/><rect x="1" y="3" width="1" height="1"/><rect x="2" y="3" width="1" height="1"/><rect x="3" y="3" width="1" height="1"/><rect x="5" y="3" width="1" height="1"/><rect x="8" y="3" width="1" height="1"/><rect x="10" y="3" width="1" height="1"/><rect x="11" y="3" width="1" height="1"/><rect x="12" y="3" width="1" height="1"/><rect x="13" y="3" width="1" height="1"/><rect x="0" y="4" width="1" height="1"/><rect x="2" y="4" width="1" height="1"/><rect x="3" y="4" width="1" height="1"/><rect x="5" y="4" width="1" height="1"/><rect x="6" y="4" width="1" height="1"/><rect x="9" y="4" width="1" height="1"/><rect x="0" y="5" width="1" height="1"/><rect x="2" y="5" width="1" height="1"/><rect x="4" y="5" width="1" height="1"/><rect x="5" y="5" width="1" height="1"/><rect x="7" y="5" width="1" height="1"/><rect x="9" y="5" width="1" height="1"/><rect x="13" y="5" width="1" height="1"/><rect x="0" y="6" width="1" height="1"/><rect x="2" y="6" width="1" height="1"/><rect x="6" y="6" width="1" height="1"/><rect x="9" y="6" width="1" height="1"/><rect x="11" y="6" width="1" height="1"/><rect x="0" y="7" width="1" height="1"/><rect x="4" y="7" width="1" height="1"/><rect x="5" y="7" width="1" height="1"/><rect x="7" y="7" width="1" height="1"/><rect x="8" y="7" width="1" height="1"/><rect x="9" y="7" width="1" height="1"/><rect x="10" y="7" width="1" height="1"/><rect x="11" y="7" width="1" height="1"/><rect x="13" y="7" width="1" height="1"/><rect x="0" y="8" width="1" height="1"/><rect x="1" y="8" width="1" height="1"/><rect x="2" y="8" width="1" height="1"/><rect x="3" y="8" width="1" height="1"/><rect x="5" y="8" width="1" height="1"/><rect x="6" y="8" width="1" height="1"/><rect x="11" y="8" width="1" height="1"/><rect x="12" y="8" width="1" height="1"/><rect x="0" y="9" width="1" height="1"/><rect x="1" y="9" width="1" height="1"/><rect x="4" y="9" width="1" height="1"/><rect x="5" y="9" width="1" height="1"/><rect x="6" y="9" width="1" height="1"/><rect x="7" y="9" width="1" height="1"/><rect x="10" y="9" width="1" height="1"/><rect x="11" y="9" width="1" height="1"/><rect x="12" y="9" width="1" height="1"/><rect x="13" y="9" width="1" height="1"/><rect x="0" y="10" width="1" height="1"/><rect x="1" y="10" width="1" height="1"/><rect x="8" y="10" width="1" height="1"/><rect x="0" y="11" width="1" height="1"/><rect x="1" y="11" width="1" height="1"/><rect x="2" y="11" width="1" height="1"/><rect x="3" y="11" width="1" height="1"/><rect x="5" y="11" width="1" height="1"/><rect x="6" y="11" width="1" height="1"/><rect x="7" y="11" width="1" height="1"/><rect x="8" y="11" width="1" height="1"/><rect x="9" y="11" width="1" height="1"/><rect x="10" y="11" width="1" height="1"/><rect x="11" y="11" width="1" height="1"/><rect x="12" y="11" width="1" height="1"/><rect x="13" y="11" width="1" height="1"/><rect x="0" y="12" width="1" height="1"/><rect x="1" y="12" width="1" height="1"/><rect x="2" y="12" width="1" height="1"/><rect x="3" y="12" width="1" height="1"/><rect x="6" y="12" width="1" height="1"/><rect x="7" y="12" width="1" height="1"/><rect x="8" y="12" width="1" height="1"/><rect x="9" y="12" width="1" height="1"/><rect x="10" y="12" width="1" height="1"/><rect x="0" y="13" width="1" height="1"/><rect x="1" y="13" width="1" height="1"/><rect x="2" y="13" width="1" height="1"/><rect x="3" y="13" width="1" height="1"/><rect x="4" y="13" width="1" height="1"/><rect x="5" y="13" width="1" height="1"/><rect x="6" y="13" width="1" height="1"/><rect x="7" y="13" width="1" height="1"/><rect x="8" y="13" width="1" height="1"/><rect x="9" y="13" width="1" height="1"/><rect x="10" y="13" width="1" height="1"/><rect x="11" y="13" width="1" height="1"/><rect x="12" y="13" width="1" height="1"/><rect x="13" y="13" width="1" height="1"/></g></svg><span class="badge ok" aria-hidden="true">✓</span></span><figcaption>Scan the square code</figcaption></figure>
+        <figure class="gtile no"><span class="gpic"><svg viewBox="0 0 53 32" class="gimg wide" aria-hidden="true" shape-rendering="crispEdges"><rect width="53" height="32" fill="var(--paper)"/><g fill="var(--ink)"><rect x="2" y="3" width="2" height="26"/><rect x="5" y="3" width="1" height="26"/><rect x="9" y="3" width="1" height="26"/><rect x="12" y="3" width="1" height="26"/><rect x="14" y="3" width="2" height="26"/><rect x="19" y="3" width="1" height="26"/><rect x="21" y="3" width="2" height="26"/><rect x="24" y="3" width="3" height="26"/><rect x="28" y="3" width="2" height="26"/><rect x="32" y="3" width="1" height="26"/><rect x="34" y="3" width="3" height="26"/><rect x="38" y="3" width="2" height="26"/><rect x="41" y="3" width="1" height="26"/><rect x="44" y="3" width="3" height="26"/><rect x="48" y="3" width="1" height="26"/></g></svg><span class="badge bad" aria-hidden="true">✕</span></span><figcaption>Not the striped barcode</figcaption></figure>
       </div>
       <button class="big" id="startBtn">Start camera</button>
       <div id="camWrap" class="hidden" style="margin-top:12px">
@@ -254,9 +261,13 @@ header h1{white-space:nowrap}
 
 <!-- FULL SCREEN -->
 <div id="full" class="hidden">
-  <button class="close" id="closeFull">Close ✕</button>
-  <button class="next" id="fullNext">Scan next</button>
-  <div class="inner" id="fullInner"></div>
+  <div class="stage" id="fullStage">
+    <div class="inner" id="fullInner"></div>
+    <div class="fbtns">
+      <button type="button" class="sec" id="closeFull">Close</button>
+      <button type="button" class="next" id="fullNext">Scan next</button>
+    </div>
+  </div>
 </div>
 
 <!-- SETTINGS -->
@@ -294,7 +305,7 @@ header h1{white-space:nowrap}
     <label class="chk"><input type="checkbox" id="sIncludeAI"> Include the bracket numbers in plain Code 128 / Code 39</label>
     </div>
     <label class="chk"><input type="checkbox" id="sText" checked> Show text under barcode</label>
-    <label class="chk"><input type="checkbox" id="sAutoFull"> Open full screen straight after a scan</label>
+    <label class="chk"><input type="checkbox" id="sAutoFull"> Open full screen straight after a scan or a complete typed / spoken ID</label>
     <label class="f" for="sVoiceEngine">Voice engine</label>
     <select id="sVoiceEngine">
       <option value="auto">Automatic (app's own on iPhone)</option>
@@ -545,26 +556,88 @@ function snap(svg, availW, heightCss){
   return u;
 }
 /* ---- full screen ---- */
-async function openFull(){
-  if (!current) return;
-  // Same size as the barcode on the main screen (the field scanner reads that size best), centred on white
-  const len = Math.min(innerWidth, 620) - 32;
+const fullOpen = () => !$("full").classList.contains("hidden");
+let fullFrom = "scan";
+// The phone's sideways angle: 0 upright, 90 / -90 turned sideways (180 upside down is left alone)
+function phoneAngle(){
+  let a = (screen.orientation && typeof screen.orientation.angle === "number") ? screen.orientation.angle
+        : (typeof window.orientation === "number" ? window.orientation : 0);
+  a = ((a % 360) + 360) % 360;
+  if (a === 90) return 90; if (a === 270) return -90;
+  return innerWidth > innerHeight ? 90 : 0;
+}
+// Keep the barcode screen portrait: when the phone is turned sideways, turn the screen's
+// contents back the other way so nothing moves relative to the phone.
+function layoutFull(){
+  if (!current || !fullOpen()) return;
+  const ang = innerWidth > innerHeight ? phoneAngle() : 0;
+  const W = ang ? innerHeight : innerWidth, H = ang ? innerWidth : innerHeight;
+  const st = $("fullStage");
+  st.style.width = W + "px"; st.style.height = H + "px";
+  st.style.transform = `translate(-50%,-50%) rotate(${-ang}deg)`;
+  st.classList.toggle("rot", !!ang);
+  // Same size as the barcode on the main screen (the field scanner reads that size best)
+  const len = Math.min(W, 620) - 32;
   const svg = $("barcode").cloneNode(true); svg.removeAttribute("id");
   snap(svg, len, 120);
-  const inner = $("fullInner"); inner.innerHTML=""; inner.appendChild(svg);
-  if (settings.text){ const t=document.createElement("div"); t.className="hr"; t.textContent=current.text; t.style.maxWidth=(len-40)+"px"; inner.appendChild(t); }
-  inner.style.transform = "translate(-50%,-50%)";
+  const inner = $("fullInner"); inner.innerHTML = ""; inner.appendChild(svg);
+  if (settings.text){ const t = document.createElement("div"); t.className = "hr"; t.textContent = current.text; t.style.maxWidth = (len-40) + "px"; inner.appendChild(t); }
+}
+async function openFull(from){
+  if (!current) return;
+  fullFrom = from || ($("paneType").classList.contains("hidden") ? "scan" : "type");
+  // typed / voice IDs: Edit goes back to the ID; scans: Close
+  $("closeFull").textContent = fullFrom === "type" ? "Edit" : "Close";
+  if (fullFrom === "type") clearTimeout(typedTimer);        // logged on Scan next, or once editing is finished
   $("full").classList.remove("hidden");
+  layoutFull();
+  try{ if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); }catch(e){}
+  // Android: also lock the screen to portrait (needs browser full screen); iPhones use the counter-rotation above
+  if (!IS_IOS && document.documentElement.requestFullscreen && !document.fullscreenElement){
+    try{ await document.documentElement.requestFullscreen({navigationUI:"hide"}); }catch(e){}
+  }
+  try{ if (screen.orientation && screen.orientation.lock) await screen.orientation.lock("portrait-primary"); }catch(e){}
+  layoutFull();
   try{ if (navigator.wakeLock) wake = await navigator.wakeLock.request("screen"); }catch(e){}
 }
 let wake=null;
-function closeFull(){ $("full").classList.add("hidden"); try{ wake && wake.release(); }catch(e){} wake=null; }
-$("fullBtn").onclick = openFull; $("closeFull").onclick = closeFull;
+function closeFull(){
+  $("full").classList.add("hidden"); try{ wake && wake.release(); }catch(e){} wake=null;
+  try{ screen.orientation && screen.orientation.unlock && screen.orientation.unlock(); }catch(e){}
+  try{ if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen(); }catch(e){}
+}
+$("fullBtn").onclick = () => openFull(); 
+$("closeFull").onclick = () => {
+  closeFull();
+  if (fullFrom === "type"){                // Edit: back to the ID, ready to change it
+    noAutoFor = $("manual").value; tab("type"); typedChanged();
+    setTimeout(() => { try{ $("manual").scrollIntoView({block:"center", behavior:"smooth"}); }catch(e){} }, 50);
+  }
+};
 $("fullNext").onclick = () => { flushTyped(); closeFull(); $("againBtn").click(); };
+// Typed or spoken ID: once it's complete, go straight to the full-screen barcode (like a scan)
+let autoFullTimer = 0, noAutoFor = null;   // after Edit, don't jump straight back until the ID is changed
+function autoFullTyped(){
+  clearTimeout(autoFullTimer);
+  if (!settings.autoFull) return;
+  const need = Math.max(1, +settings.idLen||8), v0 = $("manual").value, t0 = Date.now();
+  const check = () => {
+    const v = $("manual").value;
+    if (v !== v0 || !current || current.text !== v || fullOpen() || $("paneType").classList.contains("hidden") || dictating) return;
+    if (voiceBusy()){ if (Date.now() - t0 < 6000) autoFullTimer = setTimeout(check, 250); return; }   // still listening: wait for it to finish
+    if (v === noAutoFor) return;
+    noAutoFor = null;
+    if (v.length === need && /^[0-9A-Z]+$/.test(v)) openFull("type");
+  };
+  autoFullTimer = setTimeout(check, entryMethod === "Voice" ? 400 : 700);
+}
 // After "Scan next" the label just scanned is usually still in front of the camera,
 // so ignore that same code for a few seconds instead of instantly showing it again.
 let lastScan = {raw:"", until:0};
-addEventListener("resize", ()=>{ if(!$("full").classList.contains("hidden")) openFull(); if(current) snap($("barcode"), $("result").clientWidth, 120); });
+const relayout = () => { if (fullOpen()){ layoutFull(); setTimeout(layoutFull, 250); setTimeout(layoutFull, 700); } };   // phones report the new size a moment late
+addEventListener("orientationchange", relayout);
+try{ screen.orientation && screen.orientation.addEventListener("change", relayout); }catch(e){}
+addEventListener("resize", ()=>{ if (fullOpen()) layoutFull(); if(current) snap($("barcode"), $("result").clientWidth, 120); });
 
 /* ---- history (last scans, used to re-show a barcode) ---- */
 function addHist(raw){
@@ -680,6 +753,7 @@ function typedChanged(){
   if (parseBracketed(line)) typedPending = () => logScan(line, how);
   else if (spec.text.length === Math.max(1, +settings.idLen||8)) typedPending = () => logItem({id: spec.text, method:how});
   if (typedPending){ const f = typedPending; typedTimer = setTimeout(() => { if (typedPending === f){ typedPending = null; f(); } }, 2500); }
+  if (!parseBracketed(line) && spec.text.length === Math.max(1, +settings.idLen||8)) autoFullTyped();
 }
 let dictTimer = 0, pendingDict = null;
 // keyboard closed (dictation finished): now swap the dictated words for the ID
@@ -2058,7 +2132,7 @@ updateTypeHint();
 })();
 
 /* ---- version + colour theme ---- */
-const APP_VERSION = "9 Oct 2026 · v29";
+const APP_VERSION = "9 Oct 2026 · v31";
 $("appVer").textContent = "Label Rescan · " + APP_VERSION;
 const THEMES = {auto:1, light:1, dark:1};
 let theme = "auto"; try{ theme = localStorage.getItem("lr_theme") || "auto"; }catch(e){}
@@ -2078,7 +2152,7 @@ applyTheme(theme);
 
 drawPad();
 drawSession();
-if (settings.voiceDebug && typeof vlog === "function"){ document.getElementById("voiceLog").hidden = false; vlog("voice log on · v29"); }
+if (settings.voiceDebug && typeof vlog === "function"){ document.getElementById("voiceLog").hidden = false; vlog("voice log on · v31"); }
 try{
   const rs = JSON.parse(sessionStorage.getItem("lr_restore") || "null");
   if (rs){ sessionStorage.removeItem("lr_restore"); if (rs.tab === "type"){ tab("type"); if (rs.note) voiceMsg(rs.note); } }

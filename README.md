@@ -18,7 +18,7 @@ The whole app is one file, `index.html`. There is nothing to install and no serv
   - big-button **number pad** and **letter pad** (letters A–F by default)
   - **voice entry**: tap *Say the ID* and read it out. On iPhone this uses the app's own speech recogniser, which works offline and can be used for one ID after another
   - the phone keyboard, as a last resort
-- **Full-screen barcode** for the field scanner, with **Scan next** to go straight back to the camera.
+- **Full-screen barcode** for the field scanner: plain white with a black barcode in every colour theme, buttons at the bottom, and it stays upright even if the phone is turned sideways. It opens straight after a scan, and as soon as a typed or spoken ID is complete. **Scan next** goes straight on to the next label.
 - **Session list and export.** Every label handled is listed with its full 2D code data, date and time, and how it was read (Camera, Photo, Typed or Voice). **Export list** creates a CSV file to send to the manufacturer showing which items had misprinted barcodes.
 - **Auto / Light / Dark** colour theme.
 
@@ -31,7 +31,9 @@ The whole app is one file, `index.html`. There is nothing to install and no serv
 1. Tap **Start camera**. Allow camera access the first time.
 2. Fit the **square code** inside the box, about 10–15 cm away.
 3. The ID barcode opens full screen. Scan it with the field scanner.
-4. Tap **Scan next** for the next label.
+4. Tap **Scan next** for the next label, or **Close** to go back to the main screen.
+
+The barcode screen stays upright if the phone is turned sideways. On Android it also locks the screen to portrait while the barcode is showing. iPhones don't let websites lock rotation, so the app turns the barcode screen back the other way to cancel the rotation. Turning on the iPhone's own *Portrait Orientation Lock* (in Control Centre) works too.
 
 If the bar fills and says *Very hard to read*, flatten the label, avoid glare and hold steady. If that doesn't work, enter the ID by hand.
 
@@ -64,6 +66,8 @@ Open the **Type code** tab and enter the characters printed after **ID:** on the
 
   **Voice log:** **⚙ Settings → Show voice log** lists, under the microphone button, exactly what the phone did on each listen (started, heard, ended, closed). Turn it on and take a screenshot if voice misbehaves.
 
+As soon as all 8 characters are entered (typed or spoken), the full-screen barcode opens. Tap **Edit** to go back and change the ID (it opens again once you've fixed it), or **Scan next** to clear it for the next label.
+
 Always check the ID on screen against the label before scanning.
 
 ### Export the session
@@ -90,7 +94,7 @@ The camera and microphone only work over **https**, which GitHub Pages provides.
 
 ### Updating
 
-Upload the new `index.html` over the old one and **Commit changes**. The version shows at the bottom of the main screen (for example *Label Rescan · 9 Oct 2026 · v29*). If a phone still shows the old version after a few minutes, fully close the app and reopen it, or add `?v=29` to the end of the link.
+Upload the new `index.html` over the old one and **Commit changes**. The version shows at the bottom of the main screen (for example *Label Rescan · 9 Oct 2026 · v31*). If a phone still shows the old version after a few minutes, fully close the app and reopen it, or add `?v=31` to the end of the link.
 
 ---
 
@@ -102,7 +106,7 @@ Upload the new `index.html` over the old one and **Commit changes**. The version
 | Letters on the letter pad | A–F | Only the letters your IDs use |
 | ID = last how many characters of field (250) | 8 | |
 | Show text under barcode | On | |
-| Open full screen straight after a scan | On | |
+| Open full screen straight after a scan or a complete typed / spoken ID | On | |
 | Voice engine | Automatic | Automatic uses the app's own recogniser on iPhone and the phone's built-in one on Android. *App's own* works offline after a one-off 41 MB download |
 | Show voice log | Off | Lists what the microphone did on each listen, for troubleshooting |
 | Colour theme | Auto | Also on the main screen |
