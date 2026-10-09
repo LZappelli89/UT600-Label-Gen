@@ -53,6 +53,10 @@ Open the **Type code** tab and enter the characters printed after **ID:** on the
 
   For example: *"five four zero nine nine Bravo eight seven"*. "Double nine" and "oh" for zero also work. The app stops listening once the ID is complete.
 
+  **On iPhone**, each tap listens for one phrase, so say the whole ID in one go. If it stops early, it shows *Got 5 of 8*. Tap the microphone again and say the rest.
+
+  **If voice stops responding**, the app offers **Use the keyboard microphone instead**. Tap it, then tap the 🎤 on the phone's keyboard and read the ID out. The app turns the words into the ID the same way.
+
 Always check the ID on screen against the label before scanning.
 
 ### Export the session
@@ -78,7 +82,7 @@ The camera and microphone only work over **https**, which GitHub Pages provides.
 
 ### Updating
 
-Upload the new `index.html` over the old one and **Commit changes**. The version shows at the bottom of the main screen (for example *Label Rescan · 9 Oct 2026 · v21*). If a phone still shows the old version after a few minutes, fully close the app and reopen it, or add `?v=21` to the end of the link.
+Upload the new `index.html` over the old one and **Commit changes**. The version shows at the bottom of the main screen (for example *Label Rescan · 9 Oct 2026 · v22*). If a phone still shows the old version after a few minutes, fully close the app and reopen it, or add `?v=22` to the end of the link.
 
 ---
 
@@ -158,7 +162,8 @@ If the **Say the ID** button is missing, that browser doesn't support voice. Try
 |---|---|
 | Camera won't open | Allow camera access for the site (see *Stopping the Allow pop-ups*), and make sure you're on the `https://` link |
 | Asked to Allow every time | See *Stopping the Allow pop-ups* |
-| Voice won't listen for a second ID | Fixed in v21. Update the app. If you tap the microphone within a second of finishing an ID, it shows *One moment…*. Tap again when it says *Ready* |
+| Voice only works for the first ID (iPhone) | Fixed in v22. Update the app. If the button lights up but nothing is heard, after 9 seconds the app offers the keyboard microphone instead |
+| *One moment…* when tapping the microphone | The previous ID is still closing. Tap again when it says *Ready* |
 | Code won't read | Flatten the label, avoid glare, fill most of the box with the code; or use **Scan from photo**; or enter the ID by hand |
 | Field scanner won't read the phone screen | Turn screen brightness up, and hold the scanner a little further from the screen at a slight angle |
 | *That's the label you just scanned* | The app ignores the previous label for 5 seconds after **Scan next**. Move to the next label |

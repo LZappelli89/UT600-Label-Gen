@@ -88,6 +88,7 @@ input[type=text]{font-family:ui-monospace,Menlo,Consolas,monospace;letter-spacin
 .permhelp summary{font-weight:700;padding:10px 0;color:var(--text)}
 .permhelp ol{margin:0 0 10px;padding-left:20px;font-size:14px;line-height:1.45}
 .permhelp p{font-size:13px;color:var(--muted);margin:0 0 10px}
+.kbdict{margin:8px 0 4px;border:0;border-radius:10px;padding:10px 14px;font-size:15px;font-weight:700;background:var(--accent);color:var(--accent-ink)}
 .voicemsg{text-align:center;margin:8px 0 0}
 .voicemsg b{color:var(--text)}
 .pad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
@@ -666,7 +667,24 @@ function typedChanged(){
   if (parseBracketed(line)) typedTimer = setTimeout(()=>logScan(line, how), 2500);
   else if (spec.text.length === Math.max(1, +settings.idLen||8)) typedTimer = setTimeout(()=>logItem({id: spec.text, method:how}), 2500);
 }
-$("manual").oninput = () => { if (voiceBusy()) stopVoice(); entryMethod = "Typed"; typedChanged(); };
+let dictTimer = 0;
+$("manual").oninput = () => {
+  if (voiceBusy()) stopVoice();
+  const v = $("manual").value;
+  // looks like dictated words rather than a typed code
+  if (/\s/.test(v.trim()) && !/^\s*\(/.test(v) && typeof parseSpoken === "function"){
+    const p = parseSpoken(v);
+    clearTimeout(dictTimer);
+    voiceMsg(p.id ? `Will enter: <b>${esc(p.id)}</b>` + (p.unknown.length ? `<br>Didn't understand: ${esc(p.unknown.join(", "))}` : "") : "");
+    dictTimer = setTimeout(() => {
+      if ($("manual").value !== v || !p.id) return;
+      $("manual").value = p.id; entryMethod = "Voice"; typedChanged();
+      voiceMsg(`Heard: “${esc(v.trim())}”`);
+    }, 1500);
+    return;
+  }
+  entryMethod = "Typed"; typedChanged();
+};
 /* ---- big-button keypad ---- */
 let padMode = "num", kbMode = false;
 function padLetters(){ return (settings.letters||DEF.letters).toUpperCase().replace(/[^A-Z]/g,"").split("").filter((c,i,a)=>a.indexOf(c)===i); }
@@ -1359,7 +1377,8 @@ function releaseCam(){
   clearTimeout(camIdleTimer);
   running=false; torchOn=false;
   if (stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }
-  video.srcObject=null;
+  try{ video.pause(); }catch(e){}
+  video.srcObject=null; try{ video.removeAttribute("src"); video.load(); }catch(e){}
   $("camWrap").classList.add("hidden"); $("startBtn").classList.remove("hidden");
 }
 function onScan(text){
@@ -1574,7 +1593,9 @@ function bestOf(alts){
      session is live, so a late result can't overwrite what's typed next.
    - if a start doesn't come alive within a few seconds, the next tap uses a fresh recogniser.
    - the camera is released first, as an open camera can stop the microphone working. */
-let recog = null, vState = "idle", freshNext = false, startWatch = 0, stopWatch = 0;
+let recog = null, vState = "idle", freshNext = false, startWatch = 0, stopWatch = 0, hearWatch = 0;
+const IS_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+let lastVoice = {id:"", said:""}, gotResult = false, voiceBase = "";
 const voiceBusy = () => vState !== "idle";
 function uiVoice(){
   const on = vState === "starting" || vState === "listening";
@@ -1584,7 +1605,10 @@ function uiVoice(){
 }
 function wire(r){
   r.lang = navigator.language && /^en/i.test(navigator.language) ? navigator.language : "en-AU";
-  r.interimResults = true; r.continuous = true; r.maxAlternatives = 5;
+  // iPhones: continuous listening and live results are where repeat sessions go silent,
+  // so there each tap listens for one phrase. Other phones keep live, continuous listening.
+  if (IS_IOS){ r.continuous = false; r.interimResults = false; r.maxAlternatives = 1; }
+  else { r.interimResults = true; r.continuous = true; r.maxAlternatives = 5; }
   const live = () => { if (r === recog && vState === "starting"){ vState = "listening"; clearTimeout(startWatch); uiVoice(); } };
   r.onstart = live; r.onaudiostart = live; r.onspeechstart = live;
   r.onresult = e => {
@@ -1596,8 +1620,10 @@ function wire(r){
       if (i === e.results.length - 1) lastAlts = Array.from(x).map(y => y.transcript);
       else prefix = joinT(prefix, x[0].transcript);
     }
-    heardFinal = prefix;
+    heardFinal = joinT(voiceBase, prefix);   // voiceBase = what was said earlier, when continuing an ID
     const b = bestOf(lastAlts);
+    gotResult = true; clearTimeout(hearWatch);
+    lastVoice = {id: b.id, said: b.said};
     $("manual").value = b.id; padMode = "num"; drawPad(); entryMethod = "Voice"; typedChanged();
     voiceMsg(`Heard: “${esc(b.said)}”` + (b.unknown.length ? `<br>Didn't understand: ${esc(b.unknown.join(", "))}` : ""));
     if (b.id.length >= Math.max(1, +settings.idLen||8) && !b.unknown.length) setTimeout(stopVoice, 0);
@@ -1615,8 +1641,11 @@ function wire(r){
   };
   r.onend = () => {
     if (r !== recog) return;
-    clearTimeout(stopWatch); clearTimeout(startWatch); clearTimeout(voiceTimer);
+    clearTimeout(stopWatch); clearTimeout(startWatch); clearTimeout(voiceTimer); clearTimeout(hearWatch);
     vState = "idle"; uiVoice();
+    const need = Math.max(1, +settings.idLen||8), have = $("manual").value.length;
+    if (gotResult && entryMethod === "Voice" && have > 0 && have < need)
+      voiceMsg(`Got ${have} of ${need}. Tap the microphone and say the rest.`);
     if (/One moment/.test($("voiceMsg").textContent)) voiceMsg("Ready. Tap the microphone.");
   };
 }
@@ -1645,7 +1674,10 @@ function startVoice(){                       // runs directly from the tap
     return;
   }
   if (typeof releaseCam === "function" && !running) releaseCam();
-  heardFinal = "";
+  const need = Math.max(1, +settings.idLen||8), cur = $("manual").value;
+  const cont = entryMethod === "Voice" && cur && cur === lastVoice.id && cur.length < need;
+  heardFinal = voiceBase = cont ? lastVoice.said : "";
+  gotResult = false;
   freshNext = true;                          // a brand-new recogniser for every ID: some phones only allow one session each
   let r = getRecog(), ok = false;
   try{ r.start(); ok = true; }catch(e){
@@ -1654,7 +1686,15 @@ function startVoice(){                       // runs directly from the tap
   }
   if (!ok){ freshNext = true; voiceMsg("Voice entry couldn't start. Tap the microphone again."); uiVoice(); return; }
   vState = "starting"; uiVoice();
-  voiceMsg("Say each character, e.g. <b>five four zero nine nine Bravo eight seven</b>");
+  voiceMsg(cont ? `Carry on: say the rest after <b>${esc(cur)}</b>` : "Say each character, e.g. <b>five four zero nine nine Bravo eight seven</b>");
+  // the phone says it's listening but sends nothing back: offer the keyboard microphone instead
+  clearTimeout(hearWatch);
+  hearWatch = setTimeout(() => {
+    if (r === recog && (vState === "listening" || vState === "starting") && !gotResult){
+      try{ r.abort(); }catch(e){} freshNext = true; vState = "idle"; uiVoice();
+      voiceFallback();
+    }
+  }, 9000);
   clearTimeout(startWatch);
   startWatch = setTimeout(() => {
     if (r === recog && vState === "starting"){
@@ -1663,6 +1703,11 @@ function startVoice(){                       // runs directly from the tap
     }
   }, 5000);
   clearTimeout(voiceTimer); voiceTimer = setTimeout(stopVoice, 25000);
+}
+function voiceFallback(){
+  voiceMsg(`Voice isn't responding on this phone right now.<br><button type="button" class="kbdict" id="kbDictBtn">Use the keyboard microphone instead</button><br><span>Tap it, then tap the 🎤 on your keyboard and read the ID out.</span>`);
+  const b = document.getElementById("kbDictBtn");
+  if (b) b.onclick = () => { if (!kbMode) $("kbToggle").click(); else $("manual").focus(); };
 }
 if (Speech && !window.LR_TEST){ $("micBtn").hidden = false; $("micBtn").onclick = startVoice; }
 $("tabScan").addEventListener("click", () => { if (voiceBusy()) stopVoice(); });
@@ -1687,7 +1732,7 @@ updateTypeHint();
 })();
 
 /* ---- version + colour theme ---- */
-const APP_VERSION = "9 Oct 2026 · v21";
+const APP_VERSION = "9 Oct 2026 · v22";
 $("appVer").textContent = "Label Rescan · " + APP_VERSION;
 const THEMES = {auto:1, light:1, dark:1};
 let theme = "auto"; try{ theme = localStorage.getItem("lr_theme") || "auto"; }catch(e){}
