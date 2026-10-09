@@ -1624,6 +1624,26 @@ let recog = null, vState = "idle", startWatch = 0, hearWatch = 0, closedAt = 0, 
 const IS_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 let lastVoice = {id:"", said:""}, gotResult = false, voiceBase = "", voiceWins = 0, sessionNo = 0;
 const voiceBusy = () => vState !== "idle";
+/* iPhone microphone settings tried in turn (the log showed the mic opening but delivering silence):
+   0 "record mode": put the page's audio into play-and-record before listening
+   1 "record mode + mic held": also hold the microphone open in the app while listening
+   2 "plain": no changes
+   If a listen hears nothing after an earlier one worked, the next setting is used next time;
+   the one that works is remembered on this phone. */
+const STRATS = ["record mode", "record mode + mic held", "plain"];
+let stratIdx = 0; try{ stratIdx = Math.min(2, Math.max(0, +(localStorage.getItem("lr_voice_strat") || 0))); }catch(e){}
+let heldStream = null, stratFails = 0;
+function setRecordMode(){
+  try{
+    if (navigator.audioSession){ navigator.audioSession.type = "play-and-record"; vlog("audio session → " + navigator.audioSession.type); }
+    else vlog("audio session setting not available on this phone");
+  }catch(e){ vlog("audio session change failed: " + e.name); }
+}
+async function holdMic(){
+  try{ heldStream = await navigator.mediaDevices.getUserMedia({audio:true, video:false}); vlog("microphone held open by the app"); }
+  catch(e){ vlog("couldn't hold microphone: " + e.name); }
+}
+function releaseHeld(){ if (heldStream){ heldStream.getTracks().forEach(t => t.stop()); heldStream = null; vlog("app's microphone hold released"); } }
 const vlogLines = [], vlogT0 = Date.now();
 function vlog(m){
   vlogLines.push(((Date.now() - vlogT0)/1000).toFixed(1) + "s  " + m);
@@ -1676,7 +1696,10 @@ function wire(r){
     }
     heardFinal = joinT(voiceBase, prefix);
     const b = bestOf(lastAlts);
-    if (!gotResult) voiceWins++;
+    if (!gotResult){
+      voiceWins++; stratFails = 0;
+      if (IS_IOS && voiceWins >= 2){ try{ localStorage.setItem("lr_voice_strat", String(r.__strat)); }catch(e){} vlog(tag + "works with setting: " + STRATS[r.__strat]); }
+    }
     gotResult = true; clearTimeout(hearWatch);
     lastVoice = {id: b.id, said: b.said};
     $("manual").value = b.id; padMode = "num"; drawPad(); entryMethod = "Voice"; typedChanged();
@@ -1699,7 +1722,7 @@ function wire(r){
     r.__ended = true;
     if (r === recog){
       clearTimeout(startWatch); clearTimeout(hearWatch); clearTimeout(voiceTimer);
-      recog = null; vState = "idle"; closedAt = Date.now(); lastClosed = r; uiVoice();
+      recog = null; vState = "idle"; closedAt = Date.now(); lastClosed = r; releaseHeld(); uiVoice();
       const need = Math.max(1, +settings.idLen||8), have = $("manual").value.length;
       if (gotResult && entryMethod === "Voice" && have > 0 && have < need) voiceMsg(`Got ${have} of ${need}. Tap the microphone and say the rest.`);
     }
@@ -1717,6 +1740,7 @@ function closeMic(why){
     if (!r.__ended){ try{ r.abort(); vlog("#" + r.__n + " abort() sent"); }catch(e){ vlog("#" + r.__n + " abort failed " + e.name); } }
     dropFrame(r, 600);
   }
+  releaseHeld();
   uiVoice();
 }
 function stopVoice(){ closeMic("stopped"); }
@@ -1731,7 +1755,7 @@ function startDictation(){
   voiceMsg("Now tap the <b>🎤</b> on the keyboard and read the ID out, then tap <b>Done</b> on the keyboard.");
 }
 let dictating = false;
-function startVoice(){                       // runs directly from the tap
+async function startVoice(){                 // runs from the tap
   if (vState !== "idle"){ closeMic("tapped to stop"); return; }
   // the last session was only just closed and hasn't confirmed it's finished: give it a moment
   if (lastClosed && !lastClosed.__ended && Date.now() - closedAt < 1200){
@@ -1744,14 +1768,26 @@ function startVoice(){                       // runs directly from the tap
   const cont = entryMethod === "Voice" && cur && cur === lastVoice.id && cur.length < need;
   heardFinal = voiceBase = cont ? lastVoice.said : "";
   gotResult = false;
+  const strat = IS_IOS ? stratIdx : 2;
+  if (IS_IOS){
+    vlog("setting: " + STRATS[strat]);
+    if (strat <= 1) setRecordMode();
+    if (strat === 1){
+      vState = "starting"; uiVoice();          // show "Starting…" while the mic is opened
+      await holdMic();
+      if (vState !== "starting"){ releaseHeld(); return; }   // tapped again meanwhile
+      vState = "idle";
+    }
+  }
   let r = null;
   try{
-    r = newRecognizer(); recog = r;
+    r = newRecognizer(); r.__strat = strat; recog = r;
     r.start();
     vlog("#" + r.__n + " start() sent" + (r.__frame ? " (mini-page)" : ""));
   }catch(e){
     vlog("start failed: " + e.name + " " + e.message);
     if (r) dropFrame(r, 0);
+    releaseHeld();
     recog = null; vState = "idle"; uiVoice();
     voiceMsg("Voice entry couldn't start. Tap the microphone again."); return;
   }
@@ -1761,7 +1797,16 @@ function startVoice(){                       // runs directly from the tap
     if (r === recog && vState === "starting"){ vlog("#" + r.__n + " never started"); closeMic("didn't start"); voiceMsg("Voice didn't start. Tap the microphone to try again."); }
   }, 5000);
   hearWatch = setTimeout(() => {
-    if (r === recog && !gotResult){ vlog("#" + r.__n + " heard nothing in 8 s"); closeMic("heard nothing"); voiceFallback(); }
+    if (r === recog && !gotResult){
+      vlog("#" + r.__n + " heard nothing in 8 s");
+      closeMic("heard nothing");
+      if (IS_IOS && stratFails < STRATS.length - 1){
+        stratFails++; stratIdx = (stratIdx + 1) % STRATS.length;
+        try{ localStorage.setItem("lr_voice_strat", String(stratIdx)); }catch(e){}
+        vlog("next listen will use: " + STRATS[stratIdx]);
+        voiceMsg("Didn't hear that. Trying a different microphone setting. Tap <b>Say the ID</b> again.");
+      } else { stratFails = 0; voiceFallback(); }
+    }
   }, 8000);
   clearTimeout(voiceTimer); voiceTimer = setTimeout(() => { if (r === recog) closeMic("time limit"); }, 25000);
 }
@@ -1793,7 +1838,7 @@ updateTypeHint();
 })();
 
 /* ---- version + colour theme ---- */
-const APP_VERSION = "9 Oct 2026 · v26";
+const APP_VERSION = "9 Oct 2026 · v27";
 $("appVer").textContent = "Label Rescan · " + APP_VERSION;
 const THEMES = {auto:1, light:1, dark:1};
 let theme = "auto"; try{ theme = localStorage.getItem("lr_theme") || "auto"; }catch(e){}
@@ -1813,7 +1858,7 @@ applyTheme(theme);
 
 drawPad();
 drawSession();
-if (settings.voiceDebug && typeof vlog === "function"){ document.getElementById("voiceLog").hidden = false; vlog("voice log on · v26"); }
+if (settings.voiceDebug && typeof vlog === "function"){ document.getElementById("voiceLog").hidden = false; vlog("voice log on · v27"); }
 try{
   const rs = JSON.parse(sessionStorage.getItem("lr_restore") || "null");
   if (rs){ sessionStorage.removeItem("lr_restore"); if (rs.tab === "type"){ tab("type"); if (rs.note) voiceMsg(rs.note); } }
