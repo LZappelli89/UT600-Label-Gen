@@ -53,7 +53,7 @@ Open the **Type code** tab and enter the characters printed after **ID:** on the
 
   For example: *"five four zero nine nine Bravo eight seven"*. "Double nine" and "oh" for zero also work. The app stops listening once the ID is complete.
 
-  **On iPhone**, the phone can hold on to the microphone after being asked to stop, so the next listen hears nothing (an Apple/WebKit bug). The app fully closes the microphone as soon as an ID is complete, and also on **Stop**, **Clear**, **Scan next** or a tab change. It uses the forceful "abort" and destroys the hidden page the listen ran in, and every listen starts with a brand-new recognizer. On some iPhones the microphone opens for a second listen but delivers silence. For that, the app tries different microphone settings in turn: record mode, record mode with the microphone held open, then plain. If a listen hears nothing for 8 seconds, it says *Trying a different microphone setting* and uses the next one, and it remembers the setting that works on that phone. If none work, it offers the keyboard 🎤 instead.
+  **On iPhone**, the phone can hold on to the microphone after being asked to stop, so the next listen hears nothing (an Apple/WebKit bug). The app fully closes the microphone as soon as an ID is complete, and also on **Stop**, **Clear**, **Scan next** or a tab change. It uses the forceful "abort" and destroys the hidden page the listen ran in, and every listen starts with a brand-new recognizer. On some iPhones the microphone opens for a second listen but delivers silence, apparently because the first listen was cut short. So on iPhone the app now lets each listen **finish on its own** (it listens for one phrase, and the phone ends it a moment after you stop speaking) instead of stopping it. If a listen still hears nothing, the app tries other settings in turn: letting it finish with the microphone held open, record mode with the microphone held open, then plain. If a listen hears nothing for 8 seconds, it says *Trying a different microphone setting* and uses the next one, and it remembers the setting that works on that phone. If none work, it offers the keyboard 🎤 instead.
 
   **Voice log:** **⚙ Settings → Show voice log** lists, under the microphone button, exactly what the phone did on each listen (started, heard, ended, closed). Turn it on and take a screenshot if voice misbehaves.
 
@@ -82,7 +82,7 @@ The camera and microphone only work over **https**, which GitHub Pages provides.
 
 ### Updating
 
-Upload the new `index.html` over the old one and **Commit changes**. The version shows at the bottom of the main screen (for example *Label Rescan · 9 Oct 2026 · v27*). If a phone still shows the old version after a few minutes, fully close the app and reopen it, or add `?v=27` to the end of the link.
+Upload the new `index.html` over the old one and **Commit changes**. The version shows at the bottom of the main screen (for example *Label Rescan · 9 Oct 2026 · v28*). If a phone still shows the old version after a few minutes, fully close the app and reopen it, or add `?v=28` to the end of the link.
 
 ---
 
