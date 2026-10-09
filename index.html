@@ -295,6 +295,13 @@ header h1{white-space:nowrap}
     </div>
     <label class="chk"><input type="checkbox" id="sText" checked> Show text under barcode</label>
     <label class="chk"><input type="checkbox" id="sAutoFull"> Open full screen straight after a scan</label>
+    <label class="f" for="sVoiceEngine">Voice engine</label>
+    <select id="sVoiceEngine">
+      <option value="auto">Automatic (app's own on iPhone)</option>
+      <option value="own">App's own (on the phone, works offline)</option>
+      <option value="phone">Phone's built-in speech recognition</option>
+    </select>
+    <p class="hint">The app's own engine downloads a 41 MB voice model the first time, then works offline and can be used again and again on iPhones.</p>
     <label class="chk"><input type="checkbox" id="sVoiceDebug"> Show voice log (for troubleshooting)</label>
 
 
@@ -1501,12 +1508,12 @@ function openSettings(){
   $("sLetters").value=settings.letters||DEF.letters;
   $("sPreset").value=settings.preset; $("sIdLen").value=settings.idLen; syncPreset();
   $("sFormat").value=settings.format; $("sFields").value=settings.fields; $("sIncludeAI").checked=settings.includeAI;
-  $("sText").checked=settings.text; $("sAutoFull").checked=settings.autoFull; $("sVoiceDebug").checked=!!settings.voiceDebug;
+  $("sText").checked=settings.text; $("sAutoFull").checked=settings.autoFull; $("sVoiceDebug").checked=!!settings.voiceDebug; $("sVoiceEngine").value=settings.voiceEngine||"auto";
   $("sheet").classList.remove("hidden");
 }
 function closeSettings(){
   settings = {letters:($("sLetters").value.toUpperCase().replace(/[^A-Z]/g,"")||DEF.letters), preset:$("sPreset").value, idLen:Math.max(1, parseInt($("sIdLen").value,10)||8), format:$("sFormat").value, fields:$("sFields").value.trim(), includeAI:$("sIncludeAI").checked,
-    text:$("sText").checked, autoFull:$("sAutoFull").checked, voiceDebug:$("sVoiceDebug").checked};
+    text:$("sText").checked, autoFull:$("sAutoFull").checked, voiceDebug:$("sVoiceDebug").checked, voiceEngine:$("sVoiceEngine").value};
   if (typeof vlog === "function"){ const el = document.getElementById("voiceLog"); el.hidden = !settings.voiceDebug; if (settings.voiceDebug) vlog("voice log on · " + navigator.userAgent.replace(/^.*?\(/, "(").slice(0, 80)); }
   save("lr_settings_v3", settings); $("sheet").classList.add("hidden"); drawPad();
   rerender();
@@ -1620,10 +1627,11 @@ function bestOf(alts){
    Scan next or switch tab) the app fully closes the microphone: abort() (the forceful stop),
    disconnect it, and on iPhones destroy the hidden mini-page it ran in. Every listen gets a
    brand-new recogniser. Settings ⚙ → "Show voice log" lists what the phone actually does. */
+let ownCtx = null, ownSess = null, ownNo = 0;
 let recog = null, vState = "idle", startWatch = 0, hearWatch = 0, closedAt = 0, lastClosed = null;
 const IS_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 let lastVoice = {id:"", said:""}, gotResult = false, voiceBase = "", voiceWins = 0, sessionNo = 0;
-const voiceBusy = () => vState !== "idle";
+const voiceBusy = () => vState !== "idle" || !!ownSess;
 /* iPhone microphone settings tried in turn (the log showed the mic opening but delivering silence):
    0 "record mode": put the page's audio into play-and-record before listening
    1 "record mode + mic held": also hold the microphone open in the app while listening
@@ -1659,7 +1667,7 @@ function vlog(m){
 function uiVoice(){
   const on = vState === "starting" || vState === "listening";
   $("micBtn").classList.toggle("on", on);
-  $("micLabel").textContent = vState === "starting" ? "Starting… speak when ready" : vState === "listening" ? "Listening… tap to stop" : "Say the ID";
+  $("micLabel").textContent = ownSess && !ownSess.live && vState === "starting" ? "Getting ready… tap to cancel" : vState === "starting" ? "Starting… speak when ready" : vState === "listening" ? "Listening… tap to stop" : "Say the ID";
   showNato(on);
 }
 function newRecognizer(){
@@ -1758,7 +1766,7 @@ function closeMic(why){
   if (!(r && r.__letFinish)) releaseHeld();
   uiVoice();
 }
-function stopVoice(){ closeMic("stopped"); }
+function stopVoice(){ if (ownSess){ ownStop("stopped"); return; } closeMic("stopped"); }
 function startDictation(){
   if (voiceBusy()) stopVoice();
   $("manual").value = ""; entryMethod = "Voice"; render("", false);
@@ -1771,6 +1779,7 @@ function startDictation(){
 }
 let dictating = false;
 async function startVoice(){                 // runs from the tap
+  if (ownSess || (vState === "idle" && useOwnEngine())) return ownStart();
   if (vState !== "idle"){ closeMic("tapped to stop"); return; }
   // the last session was only just closed and hasn't confirmed it's finished: give it a moment
   if (lastClosed && !lastClosed.__ended && (lastClosed.__letFinish ? Date.now() - closedAt < 8000 : Date.now() - closedAt < 1200)){
@@ -1830,7 +1839,203 @@ function voiceFallback(){
   const b = document.getElementById("kbDictBtn");
   if (b) b.onclick = () => { if (!kbMode) $("kbToggle").click(); else $("manual").focus(); };
 }
-if ((Speech || IS_IOS) && !window.LR_TEST){ $("micBtn").hidden = false; $("micBtn").onclick = startVoice; }
+/* ---- The app's own speech recogniser (v29) ----
+   An iPhone's built-in speech recognition only works once per page load in a web app (a WebKit
+   bug: later listens open the microphone but deliver silence). So on iPhone the app recognises
+   speech itself, on the phone, with the Vosk offline recogniser and a small English model that is
+   limited to the words an ID can contain. It records the microphone directly, which iPhones allow
+   every time. The model (41 MB) downloads once and is kept on the phone. */
+const VOSK_JS = "https://cdn.jsdelivr.net/npm/vosk-browser@0.0.8/dist/vosk.js";
+const MODEL_PARTS = ["voice-model-1.bin", "voice-model-2.bin"];      // optional copy on your own site
+const MODEL_FALLBACK = "https://raw.githubusercontent.com/ccoreilly/vosk-browser/gh-pages/models/vosk-model-small-en-us-0.15.tar.gz";
+const MODEL_SIZE = 41184862, MODEL_CACHE = "lr-voice-model-v1", MODEL_KEY = "lr-voice-model.tar.gz";
+const ownCapable = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.WebAssembly && window.Worker && (window.AudioContext || window.webkitAudioContext));
+function useOwnEngine(){
+  const p = settings.voiceEngine || "auto";
+  if (!ownCapable) return false;
+  return p === "own" || (p === "auto" && (IS_IOS || !Speech));
+}
+function ownGrammar(){
+  const w = ["zero","oh","one","two","three","four","five","six","seven","eight","nine","double","triple"];
+  const nato = {J:"juliet", X:"x"};
+  for (const l of padLetters()){ w.push(l.toLowerCase()); w.push(nato[l] || (NATO[l]||"").toLowerCase()); }
+  return [...new Set(w.filter(Boolean))];
+}
+let ownModel = null, ownModelP = null, ownLoudMsg = false;
+function loadScript(src){
+  return new Promise((res, rej) => { const s = document.createElement("script"); s.src = src; s.onload = res; s.onerror = () => rej(new Error("couldn't load the voice engine")); document.head.appendChild(s); });
+}
+async function cachedModel(){
+  try{ const c = await caches.open(MODEL_CACHE), r = await c.match(MODEL_KEY); if (!r) return null; const b = await r.blob(); return b.size > 1e6 ? b : null; }
+  catch(e){ return null; }
+}
+async function fetchBlob(url, onBytes){
+  const r = await fetch(url, {cache:"no-store"});
+  if (!r.ok) throw new Error(r.status + " " + url.split("/").pop());
+  if (!r.body || !r.body.getReader){ const b = await r.blob(); onBytes(b.size); return b; }
+  const rd = r.body.getReader(), parts = [];
+  for (;;){ const {done, value} = await rd.read(); if (done) break; parts.push(value); onBytes(value.length); }
+  return new Blob(parts);
+}
+async function downloadModel(){
+  let got = 0, shown = -1;
+  const tick = n => { got += n; const p = Math.min(99, Math.floor(got / MODEL_SIZE * 100));
+    if (p !== shown && ownLoudMsg){ shown = p; voiceMsg(`Getting voice ready… <b>${p}%</b><br><span>First time only: downloads 41 MB, then it works offline.</span>`); } };
+  try{
+    const bs = [];
+    for (const p of MODEL_PARTS) bs.push(await fetchBlob(new URL(p, location.href).href, tick));
+    const b = new Blob(bs);
+    if (b.size === MODEL_SIZE){ vlog("voice model from this site"); return b; }
+    vlog("voice model parts on this site are the wrong size (" + b.size + ")");
+  }catch(e){ vlog("voice model not on this site (" + e.message + "), using the public copy"); }
+  got = 0;
+  const b = await fetchBlob(MODEL_FALLBACK, tick);
+  vlog("voice model downloaded (" + b.size + " bytes)");
+  return b;
+}
+function withTimeout(p, ms, what){ return Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(what + " timed out")), ms))]); }
+function ensureOwnModel(){
+  if (ownModel) return Promise.resolve(ownModel);
+  if (!ownModelP) ownModelP = (async () => {
+    const t0 = Date.now();
+    if (!window.Vosk){ if (ownLoudMsg) voiceMsg("Getting voice ready…"); await withTimeout(loadScript(VOSK_JS), 60000, "voice engine"); }
+    let blob = await cachedModel();
+    if (blob) vlog("voice model found on the phone");
+    else {
+      blob = await downloadModel();
+      try{ const c = await caches.open(MODEL_CACHE); await c.put(MODEL_KEY, new Response(blob, {headers:{"Content-Type":"application/gzip"}})); vlog("voice model saved on the phone"); }
+      catch(e){ vlog("couldn't save the voice model (" + e.name + "); it will download again next time"); }
+    }
+    if (ownLoudMsg) voiceMsg("Getting voice ready… almost there");
+    const url = URL.createObjectURL(blob);
+    try{ ownModel = await withTimeout(Vosk.createModel(url), 90000, "voice model"); }
+    finally{ setTimeout(() => URL.revokeObjectURL(url), 1000); }
+    vlog("voice engine ready in " + ((Date.now() - t0)/1000).toFixed(1) + " s");
+    return ownModel;
+  })().catch(e => { ownModelP = null; throw e; });
+  return ownModelP;
+}
+// Warm the engine up in the background when the Type tab opens, but only if the model is already on the phone.
+async function preloadOwn(){
+  if (!useOwnEngine() || ownModel || ownModelP || window.LR_TEST) return;
+  if (await cachedModel()) ensureOwnModel().catch(e => vlog("voice preload failed: " + e.message));
+}
+function ownBusy(){ return !!ownSess; }
+async function ownStart(){                     // runs from the tap
+  if (ownSess){ ownStop(ownSess.live ? "tapped to stop" : "stopped"); return; }
+  // the audio player has to be started inside the tap on iPhones
+  try{
+    if (!ownCtx || ownCtx.state === "closed") ownCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (ownCtx.state !== "running") ownCtx.resume().catch(() => {});
+  }catch(e){ vlog("audio couldn't start: " + e.name); }
+  if (typeof releaseCam === "function" && !running) releaseCam();
+  const need = Math.max(1, +settings.idLen||8), cur = $("manual").value;
+  const cont = entryMethod === "Voice" && cur && cur === lastVoice.id && cur.length < need;
+  const s = {n: ++ownNo, base: cont ? lastVoice.said : "", finals: [], partial: "", heard: false, live: false, done: false};
+  ownSess = s; vState = "starting"; uiVoice();
+  vlog("#" + s.n + " own engine: start");
+  ownLoudMsg = true;
+  let model, stream;
+  try{
+    if (!ownModel) voiceMsg("Getting voice ready…");
+    model = await ensureOwnModel();
+    if (s.done) return;
+    stream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true, noiseSuppression:true, autoGainControl:true, channelCount:1}, video:false});
+  }catch(e){
+    ownLoudMsg = false;
+    if (s.done) return;
+    vlog("#" + s.n + " couldn't start: " + (e.name || "") + " " + (e.message || ""));
+    ownFinish(s);
+    if (e && (e.name === "NotAllowedError" || e.name === "SecurityError")) voiceMsg("Microphone blocked. Allow the microphone for this site. See Settings ⚙ → Stop the Allow pop-ups.");
+    else if (e && e.name === "NotReadableError") voiceMsg("The microphone is busy (another app may be using it). Tap the microphone to try again.");
+    else voiceMsg("Voice couldn't get ready (" + esc(e.message || e.name || "error") + "). Check the internet connection and tap the microphone to try again.");
+    return;
+  }
+  ownLoudMsg = false;
+  if (s.done){ stream.getTracks().forEach(t => t.stop()); return; }
+  const ctx = ownCtx;
+  if (ctx.state !== "running"){ try{ await ctx.resume(); }catch(e){} }
+  const rec = new model.KaldiRecognizer(ctx.sampleRate, JSON.stringify(ownGrammar()));
+  rec.on("result", m => ownHeard(s, m.result && m.result.text, true));
+  rec.on("partialresult", m => ownHeard(s, m.result && m.result.partial, false));
+  const src = ctx.createMediaStreamSource(stream), proc = ctx.createScriptProcessor(4096, 1, 1), mute = ctx.createGain();
+  mute.gain.value = 0;
+  s.frames = 0; s.loud = 0;
+  proc.onaudioprocess = e => {
+    if (s.closing || s.done) return;
+    const d = e.inputBuffer.getChannelData(0);
+    let peak = 0; for (let i = 0; i < d.length; i += 8){ const a = d[i] < 0 ? -d[i] : d[i]; if (a > peak) peak = a; }
+    s.frames++; if (peak > 0.02) s.loud++;
+    try{ rec.acceptWaveformFloat(new Float32Array(d), ctx.sampleRate); }catch(err){ vlog("#" + s.n + " audio feed failed: " + err.message); }
+  };
+  src.connect(proc); proc.connect(mute); mute.connect(ctx.destination);
+  Object.assign(s, {stream, rec, src, proc, mute, live: true});
+  vState = "listening"; uiVoice();
+  vlog("#" + s.n + " listening (" + ctx.sampleRate + " Hz, audio " + ctx.state + ")");
+  voiceMsg(s.base ? `Carry on: say the rest after <b>${esc(cur)}</b>` : "Say each character, e.g. <b>five four zero nine nine Bravo eight seven</b>");
+  // checks: is sound arriving, has anything been recognised, and a time limit
+  const resetAudio = () => { try{ ownCtx && ownCtx.close(); }catch(e){} ownCtx = null; vlog("#" + s.n + " audio reset for the next listen"); };
+  s.t1 = setTimeout(() => {
+    if (s.done || s.closing) return;
+    vlog("#" + s.n + " after 3 s: " + s.frames + " audio blocks, " + s.loud + " with sound, audio " + ctx.state);
+    if (!s.frames){ vlog("#" + s.n + " no audio arriving"); resetAudio(); ownStop("no audio"); voiceMsg("The microphone didn't start. Tap the microphone to try again."); }
+  }, 3000);
+  s.t2 = setTimeout(() => { if (!s.done && !s.closing && !s.heard){ if (!s.loud) resetAudio(); ownStop("heard nothing"); voiceMsg(s.loud ? "Didn't catch that. Tap the microphone and say each character clearly." : "Didn't hear anything. Tap the microphone and try again."); } }, 12000);
+  s.t3 = setTimeout(() => { if (!s.done && !s.closing) ownStop("time limit"); }, 30000);
+}
+function ownHeard(s, text, final){
+  if (s.done || s !== ownSess) return;
+  text = (text || "").trim();
+  if (final){ if (text) s.finals.push(text); s.partial = ""; } else { if (text === s.partial) return; s.partial = text; }
+  if (text) vlog("#" + s.n + (final ? " final “" : " heard “") + text + "”");
+  if (final && s.onFinal) s.onFinal();
+  const said = [s.base, ...s.finals, s.partial].filter(Boolean).join(" ").trim();
+  if (!said || (!text && !final)) return;
+  const p = parseSpoken(said), need = Math.max(1, +settings.idLen||8);
+  if (!p.id && !s.heard) return;
+  s.heard = true;
+  lastVoice = {id: p.id, said};
+  $("manual").value = p.id; padMode = "num"; drawPad(); entryMethod = "Voice"; typedChanged();
+  voiceMsg(`Heard: “${esc(said)}”`);
+  clearTimeout(s.doneT);
+  if (!s.closing && p.id.length >= need){
+    // full length: stop now if the phrase has ended, or after a short pause if it's still a guess in progress
+    if (final) ownStop("ID complete"); else s.doneT = setTimeout(() => ownStop("ID complete"), 900);
+  }
+}
+function ownRelease(s){
+  clearTimeout(s.t1); clearTimeout(s.t2); clearTimeout(s.t3); clearTimeout(s.doneT);
+  if (s.proc){ s.proc.onaudioprocess = null; try{ s.src.disconnect(); s.proc.disconnect(); s.mute.disconnect(); }catch(e){} }
+  if (s.stream){ s.stream.getTracks().forEach(t => t.stop()); s.stream = null; vlog("#" + s.n + " microphone closed"); }
+}
+function ownFinish(s){
+  if (s.done) return;
+  s.done = true; ownRelease(s);
+  if (s.rec){ try{ s.rec.remove(); }catch(e){} }
+  if (ownSess === s){ ownSess = null; vState = "idle"; uiVoice(); }
+}
+// Stop listening. For a normal stop, the last few words are collected first; Clear / Scan next / tab change cancel straight away.
+function ownStop(why){
+  const s = ownSess; if (!s){ vState = "idle"; uiVoice(); return; }
+  if (s.closing && why !== "stopped") return;
+  vlog("#" + s.n + " stop (" + why + ")");
+  if (why === "stopped" || !s.rec){ ownFinish(s); return; }
+  s.closing = true; ownRelease(s);
+  vState = "idle"; uiVoice();
+  const end = () => {
+    if (s.done) return;
+    ownFinish(s);
+    const need = Math.max(1, +settings.idLen||8), have = $("manual").value.length;
+    if (s.heard && entryMethod === "Voice" && have > 0 && have < need) voiceMsg(`Got ${have} of ${need}. Tap the microphone and say the rest.`);
+    else if (s.heard && have > need) voiceMsg(`Heard ${have} characters, the ID is ${need}. Check it, or Clear and try again.`);
+    else if (!s.heard) voiceMsg("");
+  };
+  s.onFinal = () => setTimeout(end, 0);
+  try{ s.rec.retrieveFinalResult(); }catch(e){ end(); return; }
+  setTimeout(end, 1200);
+}
+if ((Speech || ownCapable) && !window.LR_TEST){ $("micBtn").hidden = false; $("micBtn").onclick = startVoice; }
+$("tabType").addEventListener("click", () => { preloadOwn(); });
 $("tabScan").addEventListener("click", () => { if (voiceBusy()) stopVoice(); });
 updateTypeHint();
 
@@ -1853,7 +2058,7 @@ updateTypeHint();
 })();
 
 /* ---- version + colour theme ---- */
-const APP_VERSION = "9 Oct 2026 · v28";
+const APP_VERSION = "9 Oct 2026 · v29";
 $("appVer").textContent = "Label Rescan · " + APP_VERSION;
 const THEMES = {auto:1, light:1, dark:1};
 let theme = "auto"; try{ theme = localStorage.getItem("lr_theme") || "auto"; }catch(e){}
@@ -1873,7 +2078,7 @@ applyTheme(theme);
 
 drawPad();
 drawSession();
-if (settings.voiceDebug && typeof vlog === "function"){ document.getElementById("voiceLog").hidden = false; vlog("voice log on · v28"); }
+if (settings.voiceDebug && typeof vlog === "function"){ document.getElementById("voiceLog").hidden = false; vlog("voice log on · v29"); }
 try{
   const rs = JSON.parse(sessionStorage.getItem("lr_restore") || "null");
   if (rs){ sessionStorage.removeItem("lr_restore"); if (rs.tab === "type"){ tab("type"); if (rs.note) voiceMsg(rs.note); } }

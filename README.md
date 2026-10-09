@@ -4,7 +4,7 @@ A phone web app that turns the **2D Data Matrix** code on a label into a **1D ba
 
 It was built for labels whose 1D barcode printed badly while the square 2D code next to it is still readable. Instead of keying long codes into the field scanner by hand, staff scan the square code with their phone and hold the phone's screen up to the field scanner.
 
-The whole app is one file, `index.html`. There is nothing to install and no server or database.
+The whole app is one file, `index.html`. There is nothing to install and no server or database. Two optional files, `voice-model-1.bin` and `voice-model-2.bin`, hold the voice model for iPhone voice entry (see *Setting up on GitHub Pages*).
 
 ---
 
@@ -16,7 +16,7 @@ The whole app is one file, `index.html`. There is nothing to install and no serv
 - **Scan from photo.** A fallback for codes that are hard to read live.
 - **Manual entry.** For labels where the 2D code is also unreadable:
   - big-button **number pad** and **letter pad** (letters A–F by default)
-  - **voice entry**: tap *Say the ID* and read it out
+  - **voice entry**: tap *Say the ID* and read it out. On iPhone this uses the app's own speech recogniser, which works offline and can be used for one ID after another
   - the phone keyboard, as a last resort
 - **Full-screen barcode** for the field scanner, with **Scan next** to go straight back to the camera.
 - **Session list and export.** Every label handled is listed with its full 2D code data, date and time, and how it was read (Camera, Photo, Typed or Voice). **Export list** creates a CSV file to send to the manufacturer showing which items had misprinted barcodes.
@@ -53,7 +53,14 @@ Open the **Type code** tab and enter the characters printed after **ID:** on the
 
   For example: *"five four zero nine nine Bravo eight seven"*. "Double nine" and "oh" for zero also work. The app stops listening once the ID is complete.
 
-  **On iPhone**, the phone can hold on to the microphone after being asked to stop, so the next listen hears nothing (an Apple/WebKit bug). The app fully closes the microphone as soon as an ID is complete, and also on **Stop**, **Clear**, **Scan next** or a tab change. It uses the forceful "abort" and destroys the hidden page the listen ran in, and every listen starts with a brand-new recognizer. On some iPhones the microphone opens for a second listen but delivers silence, apparently because the first listen was cut short. So on iPhone the app now lets each listen **finish on its own** (it listens for one phrase, and the phone ends it a moment after you stop speaking) instead of stopping it. If a listen still hears nothing, the app tries other settings in turn: letting it finish with the microphone held open, record mode with the microphone held open, then plain. If a listen hears nothing for 8 seconds, it says *Trying a different microphone setting* and uses the next one, and it remembers the setting that works on that phone. If none work, it offers the keyboard 🎤 instead.
+  **On iPhone**, the phone's built-in speech recognition only works once each time a web app is opened (an Apple/WebKit bug: later listens open the microphone but hear nothing). So on iPhone the app uses **its own speech recogniser** instead. It records the microphone directly and turns the words into characters on the phone itself, so it works for one ID after another, and offline.
+
+  - The first time you tap **Say the ID**, it downloads a 41 MB voice model and shows *Getting voice ready… N%*. This happens once; the model is then kept on the phone. Do it on Wi-Fi.
+  - After that, each tap takes a moment to get ready the first time the app is opened, then starts straight away.
+  - It only listens for the words an ID can contain (numbers, Alpha to Foxtrot, A to F, "double"), which makes it accurate for IDs. It stops once 8 characters are heard. You can pause between characters.
+  - If it hears the wrong number of characters, the app says so. Check the ID, or tap **Clear** and say it again.
+
+  Android phones use their built-in speech recognition, which works repeatedly. To choose, go to **⚙ Settings → Voice engine**.
 
   **Voice log:** **⚙ Settings → Show voice log** lists, under the microphone button, exactly what the phone did on each listen (started, heard, ended, closed). Turn it on and take a screenshot if voice misbehaves.
 
@@ -74,6 +81,7 @@ The session is stored on the phone only. Export it before clearing, changing pho
 
 1. Create a repository, for example `label-rescan`, and set it to **Public**.
 2. Upload `index.html` (and this `README.md`) to the root of the repository.
+   - Optional but recommended: also upload `voice-model-1.bin` and `voice-model-2.bin` (about 20 MB each). These are the iPhone voice model, split in two so each fits GitHub's 25 MB upload limit. Without them, the app downloads the same model from the public Vosk project on GitHub, which works but relies on that copy staying online.
 3. Go to **Settings → Pages → Source: Deploy from a branch**, branch `main`, folder `/ (root)`, and tap **Save**.
 4. After a minute or two the app is live at `https://<your-username>.github.io/label-rescan/`.
 5. On each phone, open the link and **Add to Home Screen** so it opens like an app.
@@ -82,7 +90,7 @@ The camera and microphone only work over **https**, which GitHub Pages provides.
 
 ### Updating
 
-Upload the new `index.html` over the old one and **Commit changes**. The version shows at the bottom of the main screen (for example *Label Rescan · 9 Oct 2026 · v28*). If a phone still shows the old version after a few minutes, fully close the app and reopen it, or add `?v=28` to the end of the link.
+Upload the new `index.html` over the old one and **Commit changes**. The version shows at the bottom of the main screen (for example *Label Rescan · 9 Oct 2026 · v29*). If a phone still shows the old version after a few minutes, fully close the app and reopen it, or add `?v=29` to the end of the link.
 
 ---
 
@@ -95,6 +103,8 @@ Upload the new `index.html` over the old one and **Commit changes**. The version
 | ID = last how many characters of field (250) | 8 | |
 | Show text under barcode | On | |
 | Open full screen straight after a scan | On | |
+| Voice engine | Automatic | Automatic uses the app's own recogniser on iPhone and the phone's built-in one on Android. *App's own* works offline after a one-off 41 MB download |
+| Show voice log | Off | Lists what the microphone did on each listen, for troubleshooting |
 | Colour theme | Auto | Also on the main screen |
 
 Settings are saved on each phone.
@@ -120,8 +130,9 @@ The damaged-code repair uses this layout. It knows which parts of the code never
 
 - Scanning, decoding and barcode generation all happen **on the phone**. No label data is sent anywhere.
 - The session list and settings are stored in the phone's browser storage.
-- **Voice entry** uses the phone's built-in speech recognition. On most phones this sends the audio to Apple or Google to turn it into text, so it needs internet access.
-- The app loads two open-source libraries from public CDNs when it opens, so it needs internet access to start.
+- **Voice entry on iPhone** (the app's own recogniser) runs entirely on the phone. No audio leaves the phone.
+- **Voice entry with the phone's built-in recognition** (Android, or if chosen in Settings) usually sends the audio to Google or Apple to turn it into text, so it needs internet access.
+- The app loads two open-source libraries from public CDNs when it opens, so it needs internet access to start. The voice engine (about 6 MB) is loaded the first time voice is used.
 
 ---
 
@@ -148,7 +159,7 @@ The app also keeps the camera open for 3 minutes after a scan, so **Scan next** 
 | | iPhone (Safari) | Android (Chrome) |
 |---|---|---|
 | Live camera scanning | ✓ | ✓ |
-| Voice entry | ✓ (asks for microphone and speech recognition permission) | ✓ (asks for microphone permission) |
+| Voice entry | ✓ app's own recogniser, offline after a one-off 41 MB download (asks for microphone permission) | ✓ built-in recognition (asks for microphone permission) |
 | Share the export | ✓ (share sheet) | ✓ (share sheet) |
 | Vibrate on scan | — | ✓ |
 
@@ -162,7 +173,9 @@ If the **Say the ID** button is missing, that browser doesn't support voice. Try
 |---|---|
 | Camera won't open | Allow camera access for the site (see *Stopping the Allow pop-ups*), and make sure you're on the `https://` link |
 | Asked to Allow every time | See *Stopping the Allow pop-ups* |
-| Voice only works for the first ID (iPhone) | Update to v26 or later, which fully closes the microphone after each ID. If it still happens, turn on **⚙ Settings → Show voice log**, try two IDs, and screenshot the log |
+| Voice only works for the first ID (iPhone) | Update to v29 or later and check **⚙ Settings → Voice engine** is *Automatic* or *App's own*. If it still happens, turn on **Show voice log**, try two IDs, and screenshot the log |
+| *Getting voice ready* is slow or fails | The first use downloads 41 MB. Use Wi-Fi and tap the microphone again. If it fails on every phone, upload `voice-model-1.bin` and `voice-model-2.bin` to the repository |
+| Voice model downloads again | Safari can clear a website's saved data if the site isn't opened for a few weeks. Adding the app to the Home Screen helps it keep the model |
 | *One moment…* when tapping the microphone | The previous ID is still closing. Tap again when it says *Ready* |
 | Code won't read | Flatten the label, avoid glare, fill most of the box with the code; or use **Scan from photo**; or enter the ID by hand |
 | Field scanner won't read the phone screen | Turn screen brightness up, and hold the scanner a little further from the screen at a slight angle |
@@ -176,4 +189,6 @@ If the **Say the ID** button is missing, that browser doesn't support voice. Try
 
 - [JsBarcode](https://github.com/lindell/JsBarcode) (MIT licence): draws the 1D barcode
 - [zxing-wasm](https://github.com/Sec-ant/zxing-wasm) (MIT licence), based on [zxing-cpp](https://github.com/zxing-cpp/zxing-cpp) (Apache 2.0 licence): reads the 2D code
+- [vosk-browser](https://github.com/ccoreilly/vosk-browser) (Apache 2.0 licence), based on [Vosk](https://github.com/alphacep/vosk-api) by Alpha Cephei (Apache 2.0 licence): the app's own speech recogniser
+- The Vosk small English model `vosk-model-small-en-us-0.15` by Alpha Cephei (Apache 2.0 licence): `voice-model-1.bin` + `voice-model-2.bin` joined together are this model's original `.tar.gz` file
 - A built-in Data Matrix repair decoder (grid fitting and Reed–Solomon error and erasure correction) for damaged labels
