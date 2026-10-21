@@ -1,4 +1,6 @@
-# Label Rescan
+# UT600 Label Rescan
+
+Created by **Leigh Zappelli**. © 2026 Leigh Zappelli.
 
 A phone web app that turns the **2D Data Matrix** code on a label into a **1D barcode** on the phone screen, so a 1D-only field scanner can scan it.
 
@@ -18,7 +20,7 @@ The whole app is one file, `index.html`. There is nothing to install and no serv
   - big-button **number pad** and **letter pad** (letters A–F by default)
   - **voice entry**: tap *Say the ID* and read it out. On iPhone this uses the app's own speech recogniser, which works offline and can be used for one ID after another
   - the phone keyboard, as a last resort
-- **Full-screen barcode** for the field scanner: plain white with a black barcode in every colour theme, buttons at the bottom, and it stays upright even if the phone is turned sideways. It opens straight after a scan, and as soon as a typed or spoken ID is complete. **Scan next** goes straight on to the next label.
+- **Full-screen barcode** for the field scanner: plain white with a black barcode in every colour theme, buttons at the bottom, and it stays upright even if the phone is turned sideways. It opens straight after a scan, or when you tap **Generate barcode** after typing or saying an ID. **Scan next** goes straight on to the next label.
 - **Session list and export.** Every label handled is listed with its full 2D code data, date and time, and how it was read (Camera, Photo, Typed or Voice). **Export list** creates a CSV file to send to the manufacturer showing which items had misprinted barcodes.
 - **Auto / Light / Dark** colour theme.
 
@@ -39,7 +41,7 @@ If the bar fills and says *Very hard to read*, flatten the label, avoid glare an
 
 ### Enter an ID by hand
 
-Open the **Type code** tab and enter the characters printed after **ID:** on the label (8 characters, for example `54099B87`).
+Open the **Type code** tab and enter the characters printed after **ID:** on the label (for example `54099B87`). The count under the field shows how many characters you've entered, so you can check it against the label. IDs of any length work.
 
 - **Keypad:** tap **ABC** for letters and **123** for numbers.
 - **Voice:** tap **Say the ID** and read each character. Use the phonetic alphabet where possible:
@@ -53,20 +55,21 @@ Open the **Type code** tab and enter the characters printed after **ID:** on the
   | E | Echo |
   | F | Foxtrot |
 
-  For example: *"five four zero nine nine Bravo eight seven"*. "Double nine" and "oh" for zero also work. The app stops listening once the ID is complete.
+  For example: *"five four zero nine nine Bravo eight seven"*. "Double nine" and "oh" for zero also work. The app keeps listening until you tap **Generate barcode**.
 
   **On iPhone**, the phone's built-in speech recognition only works once each time a web app is opened (an Apple/WebKit bug: later listens open the microphone but hear nothing). So on iPhone the app uses **its own speech recogniser** instead. It records the microphone directly and turns the words into characters on the phone itself, so it works for one ID after another, and offline.
 
   - The first time you tap **Say the ID**, it downloads a 41 MB voice model and shows *Getting voice ready… N%*. This happens once; the model is then kept on the phone. Do it on Wi-Fi.
   - After that, each tap takes a moment to get ready the first time the app is opened, then starts straight away.
-  - It only listens for the words an ID can contain (numbers, Alpha to Foxtrot, A to F, "double"), which makes it accurate for IDs. It stops once 8 characters are heard. You can pause between characters.
-  - If it hears the wrong number of characters, the app says so. Check the ID, or tap **Clear** and say it again.
+  - It only listens for the words an ID can contain (numbers, Alpha to Foxtrot, A to F, "double"), which makes it accurate for IDs. It keeps listening until you tap **Generate barcode** (or the microphone), so you can take as long as you need to read each character. It stops by itself after 2 minutes. Tap the microphone again to add more, or **Clear** to start again.
 
   Android phones use their built-in speech recognition, which works repeatedly. To choose, go to **⚙ Settings → Voice engine**.
 
   **Voice log:** **⚙ Settings → Show voice log** lists, under the microphone button, exactly what the phone did on each listen (started, heard, ended, closed). Turn it on and take a screenshot if voice misbehaves.
 
-As soon as all 8 characters are entered (typed or spoken), the full-screen barcode opens. Tap **Edit** to go back and change the ID (it opens again once you've fixed it), or **Scan next** to clear it for the next label.
+When the ID is entered, check it against the label and tap **Generate barcode**. The barcode opens full screen. Tap **Edit** to go back and change the ID, or **Scan next** to clear it for the next label. When using voice, tapping **Generate barcode** also stops listening. If a character was misheard, tap **Edit** on the barcode screen and fix it with the keypad.
+
+A typed or spoken ID is added to the session list when you tap **Scan next** (or **Clear**) after generating it. If you change it with **Edit**, only the corrected ID is listed.
 
 Always check the ID on screen against the label before scanning.
 
@@ -94,7 +97,7 @@ The camera and microphone only work over **https**, which GitHub Pages provides.
 
 ### Updating
 
-Upload the new `index.html` over the old one and **Commit changes**. The version shows at the bottom of the main screen (for example *Label Rescan · 9 Oct 2026 · v31*). If a phone still shows the old version after a few minutes, fully close the app and reopen it, or add `?v=31` to the end of the link.
+Upload the new `index.html` over the old one and **Commit changes**. The version shows at the bottom of the main screen (for example *UT600 Label Rescan · 22 Oct 2026 · v36*). If a phone still shows the old version after a few minutes, fully close the app and reopen it, or add `?v=36` to the end of the link.
 
 ---
 
@@ -104,9 +107,9 @@ Upload the new `index.html` over the old one and **Commit changes**. The version
 |---|---|---|
 | What the 1D barcode should contain | ID only (Code 128) | Or the full label code (fields 90 + 250) as GS1-128, or a custom setup |
 | Letters on the letter pad | A–F | Only the letters your IDs use |
-| ID = last how many characters of field (250) | 8 | |
+| ID = last how many characters of field (250) | 8 | Used for scanned 2D codes. If the manufacturer changes the ID length, change this to match |
 | Show text under barcode | On | |
-| Open full screen straight after a scan or a complete typed / spoken ID | On | |
+| Open full screen straight after a scan | On | Typed and spoken IDs open with **Generate barcode** instead |
 | Voice engine | Automatic | Automatic uses the app's own recogniser on iPhone and the phone's built-in one on Android. *App's own* works offline after a one-off 41 MB download |
 | Show voice log | Off | Lists what the microphone did on each listen, for troubleshooting |
 | Colour theme | Auto | Also on the main screen |
@@ -123,7 +126,7 @@ The app expects the 2D code to hold GS1 data like this:
 (90)SE018 (250)7000126xxxxxxxx (240)10351xx (30)1 (37)1 (20)00
 ```
 
-- **ID** = the last 8 characters of field **(250)**.
+- **ID** = the last 8 characters of field **(250)**. If the manufacturer changes the ID length, change *ID = last how many characters of field (250)* in Settings to match.
 - The 1D barcode printed on the label holds **(90)** + **(250)**, shown in the app as the *Full label code* option.
 
 The damaged-code repair uses this layout. It knows which parts of the code never change, so it can spend all of the error correction on the parts that do. If the manufacturer changes the layout, scanning still works using the standard decoders, but heavily damaged codes are less likely to read. The app needs updating for the new layout to get that strength back.
