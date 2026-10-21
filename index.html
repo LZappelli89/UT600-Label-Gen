@@ -2,9 +2,11 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<!-- Label Rescan. Created by Leigh Zappelli. © 2026 Leigh Zappelli. -->
+<meta name="author" content="Leigh Zappelli">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#14171c">
-<title>Label Rescan</title>
+<title>UT600 Label Rescan</title>
 <style>
 :root{
   /* Layout: one narrow column of big thumb-sized controls; the white barcode card is the only bright surface */
@@ -77,6 +79,9 @@ input[type=text]{font-family:ui-monospace,Menlo,Consolas,monospace;letter-spacin
 .seg button{border:0;background:transparent;color:var(--muted);font-weight:600;font-size:15px;padding:10px;border-radius:9px}
 .seg button.on{background:var(--text);color:var(--bg)}
 #manual{font-size:28px;font-weight:700;letter-spacing:2px;text-align:center;padding:12px}
+.charcount{margin:6px 2px 0;min-height:18px;font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+#genBtn{margin-top:8px}
+#genBtn:disabled{opacity:.45}
 .micbtn{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;margin-top:12px;min-height:60px;border:2px solid var(--accent);border-radius:12px;background:transparent;color:var(--text);font-size:18px;font-weight:700}
 .micbtn.on{background:var(--accent);color:var(--accent-ink);animation:micpulse 1.2s ease-in-out infinite}
 @keyframes micpulse{50%{box-shadow:0 0 0 8px color-mix(in srgb, var(--accent) 25%, transparent)}}
@@ -137,11 +142,15 @@ code.raw{display:block;background:var(--field);border-radius:8px;padding:10px;wo
 .chk{display:flex;gap:10px;align-items:center;margin-top:14px;font-size:15px}
 .chk input{width:22px;height:22px}
 header h1{white-space:nowrap}
+/* phones: "UT600" sits on its own line above "Label Rescan" so the header fits next to the theme switch */
+@media (max-width:520px){header h1{line-height:1.1}header h1 .model{display:block}}
 @media (max-width:380px){header h1{font-size:16px}.themeseg button{padding:8px 8px;font-size:13px}}
+@media (max-width:340px){header{gap:6px;padding-left:12px;padding-right:12px}header h1{font-size:15px}header .themeseg button{padding:7px 6px!important;font-size:12px!important;min-width:0!important}header .iconbtn{width:38px;min-width:38px;padding:0}}
 .themeseg{display:flex;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:3px;gap:2px}
 .themeseg button{border:0;background:transparent;color:var(--muted);font-size:14px;font-weight:600;padding:8px 10px;border-radius:9px;min-height:34px}
 .themeseg button[aria-checked="true"]{background:var(--accent);color:var(--accent-ink)}
 .ver{text-align:center;color:var(--muted);font-size:12px;margin:18px 0 0}
+.credit{text-align:center;color:var(--muted);font-size:12px;margin:4px 0 0}
 .scanstat{width:min(68vw,260px);margin:10px auto 0;display:flex;flex-direction:column;gap:6px;align-items:stretch;text-align:center}
 .scanstat span{font-size:14px;font-weight:600;color:var(--muted)}
 .scanstat.reading span{color:var(--text)}
@@ -158,7 +167,7 @@ header h1{white-space:nowrap}
 </head>
 <body>
 <header>
-  <h1>Label <span>Rescan</span></h1>
+  <h1><b class="model">UT600</b> Label <span>Rescan</span></h1>
   <div class="themeseg" role="radiogroup" aria-label="Colour theme" id="themeSeg">
     <button role="radio" data-t="auto">Auto</button><button role="radio" data-t="light">Light</button><button role="radio" data-t="dark">Dark</button>
   </div>
@@ -205,13 +214,15 @@ header h1{white-space:nowrap}
     <div class="card">
       <label class="f" for="manual" style="margin-top:0" id="manualLabel">Type the code exactly as printed</label>
       <input type="text" id="manual" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" readonly inputmode="none" placeholder="e.g. 54099B87">
-      <p class="hint" id="manualHint">For GS1 codes, include the bracketed numbers, e.g. <b>(01)</b>…<b>(10)</b>…. The barcode updates as you type — check it against the label before scanning.</p>
+      <p class="charcount" id="charCount" aria-live="polite"></p>
       <button class="micbtn" id="micBtn" type="button" hidden><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M12 15a3.5 3.5 0 0 0 3.5-3.5v-6a3.5 3.5 0 0 0-7 0v6A3.5 3.5 0 0 0 12 15Zm6-3.5a1 1 0 1 0-2 0 4 4 0 0 1-8 0 1 1 0 1 0-2 0 6 6 0 0 0 5 5.9V20H8.5a1 1 0 1 0 0 2h7a1 1 0 1 0 0-2H13v-2.6a6 6 0 0 0 5-5.9Z"/></svg><span id="micLabel">Say the ID</span></button>
       <div class="nato" id="natoNote" hidden>
         <p>Use the phonetic alphabet where possible:</p>
         <div class="natogrid" id="natoGrid"></div>
       </div>
       <p class="hint voicemsg" id="voiceMsg" hidden></p>
+      <button class="big" id="genBtn" type="button" disabled>Generate barcode</button>
+      <p class="hint" id="manualHint">For GS1 codes, include the bracketed numbers, e.g. <b>(01)</b>…<b>(10)</b>…. The barcode updates as you type — check it against the label before scanning.</p>
       <pre class="voicelog" id="voiceLog" hidden></pre>
       <div class="pad" id="pad" aria-label="Keypad"></div>
       <button class="sample" id="kbToggle" type="button">Use phone keyboard instead</button>
@@ -257,6 +268,7 @@ header h1{white-space:nowrap}
     <p class="hint" id="exportMsg" hidden></p>
   </section>
   <p class="ver" id="appVer"></p>
+  <p class="credit">Created by Leigh Zappelli · © 2026</p>
 </main>
 
 <!-- FULL SCREEN -->
@@ -305,7 +317,7 @@ header h1{white-space:nowrap}
     <label class="chk"><input type="checkbox" id="sIncludeAI"> Include the bracket numbers in plain Code 128 / Code 39</label>
     </div>
     <label class="chk"><input type="checkbox" id="sText" checked> Show text under barcode</label>
-    <label class="chk"><input type="checkbox" id="sAutoFull"> Open full screen straight after a scan or a complete typed / spoken ID</label>
+    <label class="chk"><input type="checkbox" id="sAutoFull"> Open full screen straight after a scan</label>
     <label class="f" for="sVoiceEngine">Voice engine</label>
     <select id="sVoiceEngine">
       <option value="auto">Automatic (app's own on iPhone)</option>
@@ -426,8 +438,6 @@ function buildSpec(input, fromScan){
     }
     id = s.trim().replace(/^ID\s*:?\s*/i,"").toUpperCase();
     if (!id) throw new Error("Nothing to encode.");
-    const need = Math.max(1, +st.idLen||8);
-    if (id.length !== need) warn.push(`IDs are ${need} characters. This one has ${id.length}.`);
     if (/[^\x20-\x7E]/.test(id)) throw new Error("Code 128 can't hold some of these characters.");
     return {format:"CODE128", data:id, text:id, opts:{}, fields:null, use:null, warn};
   }
@@ -588,7 +598,6 @@ async function openFull(from){
   fullFrom = from || ($("paneType").classList.contains("hidden") ? "scan" : "type");
   // typed / voice IDs: Edit goes back to the ID; scans: Close
   $("closeFull").textContent = fullFrom === "type" ? "Edit" : "Close";
-  if (fullFrom === "type") clearTimeout(typedTimer);        // logged on Scan next, or once editing is finished
   $("full").classList.remove("hidden");
   layoutFull();
   try{ if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); }catch(e){}
@@ -606,31 +615,15 @@ function closeFull(){
   try{ screen.orientation && screen.orientation.unlock && screen.orientation.unlock(); }catch(e){}
   try{ if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen(); }catch(e){}
 }
-$("fullBtn").onclick = () => openFull(); 
+$("fullBtn").onclick = () => { if (!$("paneType").classList.contains("hidden")) generate(); else openFull(); };
 $("closeFull").onclick = () => {
   closeFull();
   if (fullFrom === "type"){                // Edit: back to the ID, ready to change it
-    noAutoFor = $("manual").value; tab("type"); typedChanged();
+    tab("type"); typedChanged();
     setTimeout(() => { try{ $("manual").scrollIntoView({block:"center", behavior:"smooth"}); }catch(e){} }, 50);
   }
 };
 $("fullNext").onclick = () => { flushTyped(); closeFull(); $("againBtn").click(); };
-// Typed or spoken ID: once it's complete, go straight to the full-screen barcode (like a scan)
-let autoFullTimer = 0, noAutoFor = null;   // after Edit, don't jump straight back until the ID is changed
-function autoFullTyped(){
-  clearTimeout(autoFullTimer);
-  if (!settings.autoFull) return;
-  const need = Math.max(1, +settings.idLen||8), v0 = $("manual").value, t0 = Date.now();
-  const check = () => {
-    const v = $("manual").value;
-    if (v !== v0 || !current || current.text !== v || fullOpen() || $("paneType").classList.contains("hidden") || dictating) return;
-    if (voiceBusy()){ if (Date.now() - t0 < 6000) autoFullTimer = setTimeout(check, 250); return; }   // still listening: wait for it to finish
-    if (v === noAutoFor) return;
-    noAutoFor = null;
-    if (v.length === need && /^[0-9A-Z]+$/.test(v)) openFull("type");
-  };
-  autoFullTimer = setTimeout(check, entryMethod === "Voice" ? 400 : 700);
-}
 // After "Scan next" the label just scanned is usually still in front of the camera,
 // so ignore that same code for a few seconds instead of instantly showing it again.
 let lastScan = {raw:"", until:0};
@@ -737,31 +730,47 @@ function tab(which){
   show(""); $("resultWrap").classList.add("hidden"); current=null;
   if (which==="type"){ stopCam(); render($("manual").value, false); drawPad(); }
 }
-$("tabScan").onclick = ()=>tab("scan"); $("tabType").onclick = ()=>tab("type");
+$("tabScan").onclick = ()=>{ flushTyped(); tab("scan"); }; $("tabType").onclick = ()=>tab("type");
 // A typed code is added to the session once it has stayed complete for 2.5 s,
 // so half-typed or mistyped IDs that get corrected straight away aren't logged.
-let typedTimer = 0, entryMethod = "Typed", typedPending = null;
+let entryMethod = "Typed", typedPending = null;
 // log a finished ID straight away (used before Clear or a refresh would lose it)
-function flushTyped(){ if (typedPending){ clearTimeout(typedTimer); const f = typedPending; typedPending = null; f(); } }
+// (only if the field still holds what was generated: an ID changed after Edit and then cleared isn't listed)
+function flushTyped(){ if (typedPending){ const f = typedPending; typedPending = null; if ($("manual").value === f.value) f(); } }
 function typedChanged(){
-  clearTimeout(typedTimer);
   const v = $("manual").value, spec = render(v, false);
-  if (!spec) return;
-  const line = stripPrefix(v).s.trim();
-  const how = entryMethod;
-  typedPending = null;
-  if (parseBracketed(line)) typedPending = () => logScan(line, how);
-  else if (spec.text.length === Math.max(1, +settings.idLen||8)) typedPending = () => logItem({id: spec.text, method:how});
-  if (typedPending){ const f = typedPending; typedTimer = setTimeout(() => { if (typedPending === f){ typedPending = null; f(); } }, 2500); }
-  if (!parseBracketed(line) && spec.text.length === Math.max(1, +settings.idLen||8)) autoFullTyped();
+  const id = spec ? spec.text : "";
+  const n = stripPrefix(v).s.trim().replace(/^ID\s*:?\s*/i,"").length;
+  $("charCount").textContent = n ? `${n} character${n === 1 ? "" : "s"}` : "";
+  $("genBtn").disabled = !spec;
+  return spec;
 }
+// "Generate barcode": the ID is finished, so show it full screen and note it for the session list.
+// It's added to the list on Scan next / Clear (so an ID corrected with Edit is only listed once).
+let genWait = 0;
+function generate(){
+  clearTimeout(genWait);
+  if (voiceBusy()){                         // still listening: finish listening first, then generate
+    if (ownSess) ownStop("tapped Generate"); else closeMic("tapped Generate");
+    const t0 = Date.now();
+    const wait = () => { if (voiceBusy() && Date.now() - t0 < 2500){ genWait = setTimeout(wait, 150); return; } if (voiceBusy()) stopVoice(); generate(); };
+    genWait = setTimeout(wait, 150); return;
+  }
+  const v = $("manual").value, spec = typedChanged();
+  if (!spec){ if (!v.trim()) show("Enter the ID first."); return; }
+  const line = stripPrefix(v).s.trim(), how = entryMethod;
+  typedPending = parseBracketed(line) ? () => logScan(line, how) : () => logItem({id: spec.text, method: how});
+  typedPending.value = v;
+  openFull("type");
+}
+$("genBtn").onclick = generate;
 let dictTimer = 0, pendingDict = null;
 // keyboard closed (dictation finished): now swap the dictated words for the ID
 $("manual").addEventListener("blur", () => {
   if (!pendingDict) return;
   const d = pendingDict, need = Math.max(1, +settings.idLen||8); pendingDict = null;
   $("manual").value = d.id; entryMethod = "Voice"; typedChanged();
-  voiceMsg(`Heard: “${esc(d.said)}”` + (d.id.length < need ? `<br>Got ${d.id.length} of ${need}.` : ""));
+  voiceMsg(`Heard: “${esc(d.said)}”<br>Check it, then tap <b>Generate barcode</b>.`);
   dictating = false; if (kbMode) setKb(false); showNato(false);
 });
 $("manual").oninput = () => {
@@ -769,7 +778,7 @@ $("manual").oninput = () => {
   const v = $("manual").value, need = Math.max(1, +settings.idLen||8);
   clearTimeout(dictTimer);
   // dictation sometimes writes the ID straight in as characters, e.g. "54099B87"
-  if (dictating && /^[0-9a-f]+$/i.test(v.trim()) && v.trim().length >= need){
+  if (dictating && /^[0-9a-f]+$/i.test(v.trim()) && v.trim().length >= 4){
     $("manual").value = v.trim().toUpperCase(); entryMethod = "Voice"; typedChanged();
     dictating = false; voiceMsg(""); setTimeout(() => { setKb(false); showNato(false); }, 600);
     return;
@@ -1506,7 +1515,7 @@ $("againBtn").onclick = ()=>{ flushTyped(); if (voiceBusy()) { stopVoice(); voic
   if ($("paneType").classList.contains("hidden")) {
     if (window.LR_TEST){ $("photoInput").click(); return; }   // test link: no live camera
     lastScan.until = Date.now() + 5000; scrollTo({top:0,behavior:"smooth"}); startCam(); } else { $("manual").value=""; render("",false); padMode="num"; drawPad(); scrollTo({top:0,behavior:"smooth"}); } };
-document.addEventListener("visibilitychange", ()=>{ if (document.hidden){ releaseCam(); if (voiceBusy()) stopVoice(); } });
+document.addEventListener("visibilitychange", ()=>{ if (document.hidden){ flushTyped(); releaseCam(); if (voiceBusy()) stopVoice(); } });
 
 /* ---- photo ---- */
 $("photoBtn").onclick = ()=>$("photoInput").click();
@@ -1605,8 +1614,8 @@ function updateTypeHint(){
   $("manualLabel").textContent = "Type the ID printed under the barcode";
   $("manual").placeholder = "e.g. 54099B87";
   $("manualHint").innerHTML = ((Speech || IS_IOS) && !window.LR_TEST)
-    ? "Just the characters after <b>ID:</b>. Tap <b>Say the ID</b> and read it out, or use the keypad. Check the barcode against the label before scanning."
-    : "Just the characters after <b>ID:</b>. Tap <b>ABC</b> for letters and <b>123</b> for numbers. Check the barcode against the label before scanning.";
+    ? "Just the characters after <b>ID:</b>. Use the keypad, or tap <b>Say the ID</b> and read it out. Then tap <b>Generate barcode</b>."
+    : "Just the characters after <b>ID:</b>. Tap <b>ABC</b> for letters and <b>123</b> for numbers, then <b>Generate barcode</b>.";
 }
 $("tabType").addEventListener("click", updateTypeHint);
 
@@ -1674,6 +1683,9 @@ function showNato(on){
   if (on) $("natoGrid").innerHTML = padLetters().map(l => `<span><b>${l}</b> ${NATO[l]||""}</span>`).join("");
   $("natoNote").hidden = !on;
 }
+function voiceDone(said){
+  voiceMsg(`Heard: “${esc(said || "")}”<br>Check it against the label, then tap <b>Generate barcode</b>. Tap the microphone to add more.`);
+}
 function voiceMsg(html){ $("voiceMsg").innerHTML = html; $("voiceMsg").hidden = !html; }
 // Some phones (iPhones especially) repeat the whole sentence so far in each new result,
 // so join pieces without doubling them up.
@@ -1702,6 +1714,12 @@ function bestOf(alts){
    disconnect it, and on iPhones destroy the hidden mini-page it ran in. Every listen gets a
    brand-new recogniser. Settings ⚙ → "Show voice log" lists what the phone actually does. */
 let ownCtx = null, ownSess = null, ownNo = 0;
+// Keep listening until Generate barcode (or the microphone) is tapped, so pausing to read the
+// next character never cuts the ID short. Safety limit: 2 minutes.
+const LISTEN_MS = 120000;
+let listenDeadline = 0, autoRestarts = 0, isRestart = false;
+const canRestart = () => !IS_IOS && Date.now() < listenDeadline - 1500 && autoRestarts < 40;
+let quietT = 0;
 let recog = null, vState = "idle", startWatch = 0, hearWatch = 0, closedAt = 0, lastClosed = null;
 const IS_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 let lastVoice = {id:"", said:""}, gotResult = false, voiceBase = "", voiceWins = 0, sessionNo = 0;
@@ -1792,12 +1810,12 @@ function wire(r){
     gotResult = true; clearTimeout(hearWatch);
     lastVoice = {id: b.id, said: b.said};
     $("manual").value = b.id; padMode = "num"; drawPad(); entryMethod = "Voice"; typedChanged();
-    voiceMsg(`Heard: “${esc(b.said)}”` + (b.unknown.length ? `<br>Didn't understand: ${esc(b.unknown.join(", "))}` : ""));
-    if (b.id.length >= Math.max(1, +settings.idLen||8) && !b.unknown.length) setTimeout(() => { if (r === recog) closeMic("ID complete"); }, 0);
+    voiceMsg(`Heard: “${esc(b.said)}”` + (b.unknown.length ? `<br>Didn't understand: ${esc(b.unknown.join(", "))}` : "") + `<br>Still listening. Tap <b>Generate barcode</b> when you've finished.`);
   };
   r.onerror = e => {
     vlog(tag + "error " + e.error);
     if (r !== recog || e.error === "aborted") return;
+    if (e.error === "no-speech" && canRestart()) return;     // just a pause: onend starts listening again
     const m = {"not-allowed":"Microphone blocked. Allow microphone (and speech recognition) for this site. See Settings ⚙ → Stop the Allow pop-ups.",
                "service-not-allowed":"Voice entry isn't allowed in this browser. Try Safari or Chrome.",
                "no-speech":"Didn't hear anything. Tap the microphone and try again.",
@@ -1811,9 +1829,15 @@ function wire(r){
     r.__ended = true;
     if (r === recog){
       clearTimeout(startWatch); clearTimeout(hearWatch); clearTimeout(voiceTimer);
-      recog = null; vState = "idle"; closedAt = Date.now(); lastClosed = r; releaseHeld(); uiVoice();
-      const need = Math.max(1, +settings.idLen||8), have = $("manual").value.length;
-      if (gotResult && entryMethod === "Voice" && have > 0 && have < need) voiceMsg(`Got ${have} of ${need}. Tap the microphone and say the rest.`);
+      recog = null; vState = "idle"; closedAt = Date.now(); lastClosed = r; releaseHeld();
+      if (canRestart()){                     // ended by the phone (a pause), not by the app: keep listening
+        autoRestarts++; vlog(tag + "ended by the phone, listening again");
+        isRestart = true; vState = "starting"; uiVoice();
+        setTimeout(() => { vState = "idle"; if (isRestart) startVoice(); }, 150);
+      } else {
+        uiVoice();
+        if (gotResult && entryMethod === "Voice" && $("manual").value) voiceDone(lastVoice.said);
+      }
     }
     if (r.__letFinish){ releaseHeld(); vlog(tag + "finished by the phone"); }
     if (/One moment/.test($("voiceMsg").textContent)) voiceMsg("Ready. Tap the microphone.");
@@ -1822,7 +1846,8 @@ function wire(r){
 }
 // Fully close the microphone now.
 function closeMic(why){
-  clearTimeout(startWatch); clearTimeout(hearWatch); clearTimeout(voiceTimer);
+  isRestart = false; listenDeadline = 0;
+  clearTimeout(quietT); clearTimeout(startWatch); clearTimeout(hearWatch); clearTimeout(voiceTimer);
   const r = recog; recog = null; vState = "idle"; closedAt = Date.now();
   if (r){
     lastClosed = r;
@@ -1854,16 +1879,18 @@ function startDictation(){
 let dictating = false;
 async function startVoice(){                 // runs from the tap
   if (ownSess || (vState === "idle" && useOwnEngine())) return ownStart();
+  const restart = isRestart; isRestart = false;
   if (vState !== "idle"){ closeMic("tapped to stop"); return; }
+  if (!restart){ listenDeadline = Date.now() + LISTEN_MS; autoRestarts = 0; }
   // the last session was only just closed and hasn't confirmed it's finished: give it a moment
-  if (lastClosed && !lastClosed.__ended && (lastClosed.__letFinish ? Date.now() - closedAt < 8000 : Date.now() - closedAt < 1200)){
+  if (!restart && lastClosed && !lastClosed.__ended && (lastClosed.__letFinish ? Date.now() - closedAt < 8000 : Date.now() - closedAt < 1200)){
     voiceMsg("One moment… tap the microphone again in a second.");
     if (!lastClosed.__letFinish) setTimeout(() => { if (/One moment/.test($("voiceMsg").textContent)) voiceMsg("Ready. Tap the microphone."); }, 1200 - (Date.now() - closedAt));
     return;
   }
   if (typeof releaseCam === "function" && !running) releaseCam();
   const need = Math.max(1, +settings.idLen||8), cur = $("manual").value;
-  const cont = entryMethod === "Voice" && cur && cur === lastVoice.id && cur.length < need;
+  const cont = entryMethod === "Voice" && cur && cur === lastVoice.id;
   heardFinal = voiceBase = cont ? lastVoice.said : "";
   gotResult = false;
   const strat = IS_IOS ? stratIdx : 3;
@@ -1890,11 +1917,11 @@ async function startVoice(){                 // runs from the tap
     voiceMsg("Voice entry couldn't start. Tap the microphone again."); return;
   }
   vState = "starting"; uiVoice();
-  voiceMsg(cont ? `Carry on: say the rest after <b>${esc(cur)}</b>` : "Say each character, e.g. <b>five four zero nine nine Bravo eight seven</b>");
+  if (!restart) voiceMsg(cont ? `Carry on: say the rest after <b>${esc(cur)}</b> (tap <b>Clear</b> to start again)` : "Say each character, e.g. <b>five four zero nine nine Bravo eight seven</b>");
   startWatch = setTimeout(() => {
     if (r === recog && vState === "starting"){ vlog("#" + r.__n + " never started"); closeMic("didn't start"); voiceMsg("Voice didn't start. Tap the microphone to try again."); }
   }, 5000);
-  hearWatch = setTimeout(() => {
+  if (!restart) hearWatch = setTimeout(() => {
     if (r === recog && !gotResult){
       vlog("#" + r.__n + " heard nothing in 8 s");
       closeMic("heard nothing");
@@ -1906,7 +1933,7 @@ async function startVoice(){                 // runs from the tap
       } else { stratFails = 0; voiceFallback(); }
     }
   }, 8000);
-  clearTimeout(voiceTimer); voiceTimer = setTimeout(() => { if (r === recog) closeMic("time limit"); }, 25000);
+  clearTimeout(voiceTimer); voiceTimer = setTimeout(() => { if (r === recog){ listenDeadline = 0; closeMic("time limit"); voiceMsg("Stopped listening after 2 minutes. Tap the microphone to carry on, or <b>Generate barcode</b>."); } }, Math.max(1000, listenDeadline - Date.now()));
 }
 function voiceFallback(){
   voiceMsg(`Voice isn't responding on this phone right now.<br><button type="button" class="kbdict" id="kbDictBtn">Use the keyboard microphone instead</button><br><span>Tap it, then tap the 🎤 on your keyboard and read the ID out.</span>`);
@@ -2004,7 +2031,7 @@ async function ownStart(){                     // runs from the tap
   }catch(e){ vlog("audio couldn't start: " + e.name); }
   if (typeof releaseCam === "function" && !running) releaseCam();
   const need = Math.max(1, +settings.idLen||8), cur = $("manual").value;
-  const cont = entryMethod === "Voice" && cur && cur === lastVoice.id && cur.length < need;
+  const cont = entryMethod === "Voice" && cur && cur === lastVoice.id;
   const s = {n: ++ownNo, base: cont ? lastVoice.said : "", finals: [], partial: "", heard: false, live: false, done: false};
   ownSess = s; vState = "starting"; uiVoice();
   vlog("#" + s.n + " own engine: start");
@@ -2046,7 +2073,7 @@ async function ownStart(){                     // runs from the tap
   Object.assign(s, {stream, rec, src, proc, mute, live: true});
   vState = "listening"; uiVoice();
   vlog("#" + s.n + " listening (" + ctx.sampleRate + " Hz, audio " + ctx.state + ")");
-  voiceMsg(s.base ? `Carry on: say the rest after <b>${esc(cur)}</b>` : "Say each character, e.g. <b>five four zero nine nine Bravo eight seven</b>");
+  voiceMsg(s.base ? `Carry on: say the rest after <b>${esc(cur)}</b> (tap <b>Clear</b> to start again)` : "Say each character, e.g. <b>five four zero nine nine Bravo eight seven</b>");
   // checks: is sound arriving, has anything been recognised, and a time limit
   const resetAudio = () => { try{ ownCtx && ownCtx.close(); }catch(e){} ownCtx = null; vlog("#" + s.n + " audio reset for the next listen"); };
   s.t1 = setTimeout(() => {
@@ -2054,8 +2081,8 @@ async function ownStart(){                     // runs from the tap
     vlog("#" + s.n + " after 3 s: " + s.frames + " audio blocks, " + s.loud + " with sound, audio " + ctx.state);
     if (!s.frames){ vlog("#" + s.n + " no audio arriving"); resetAudio(); ownStop("no audio"); voiceMsg("The microphone didn't start. Tap the microphone to try again."); }
   }, 3000);
-  s.t2 = setTimeout(() => { if (!s.done && !s.closing && !s.heard){ if (!s.loud) resetAudio(); ownStop("heard nothing"); voiceMsg(s.loud ? "Didn't catch that. Tap the microphone and say each character clearly." : "Didn't hear anything. Tap the microphone and try again."); } }, 12000);
-  s.t3 = setTimeout(() => { if (!s.done && !s.closing) ownStop("time limit"); }, 30000);
+  s.t2 = setTimeout(() => { if (!s.done && !s.closing && !s.heard){ if (!s.loud) resetAudio(); ownStop("heard nothing"); voiceMsg(s.loud ? "Didn't catch that. Tap the microphone and say each character clearly." : "Didn't hear anything. Tap the microphone and try again."); } }, 20000);
+  s.t3 = setTimeout(() => { if (!s.done && !s.closing){ ownStop("time limit"); setTimeout(() => voiceMsg("Stopped listening after 2 minutes. Tap the microphone to carry on, or <b>Generate barcode</b>."), 1300); } }, LISTEN_MS);
 }
 function ownHeard(s, text, final){
   if (s.done || s !== ownSess) return;
@@ -2070,12 +2097,7 @@ function ownHeard(s, text, final){
   s.heard = true;
   lastVoice = {id: p.id, said};
   $("manual").value = p.id; padMode = "num"; drawPad(); entryMethod = "Voice"; typedChanged();
-  voiceMsg(`Heard: “${esc(said)}”`);
-  clearTimeout(s.doneT);
-  if (!s.closing && p.id.length >= need){
-    // full length: stop now if the phrase has ended, or after a short pause if it's still a guess in progress
-    if (final) ownStop("ID complete"); else s.doneT = setTimeout(() => ownStop("ID complete"), 900);
-  }
+  voiceMsg(`Heard: “${esc(said)}”<br>Still listening. Tap <b>Generate barcode</b> when you've finished.`);
 }
 function ownRelease(s){
   clearTimeout(s.t1); clearTimeout(s.t2); clearTimeout(s.t3); clearTimeout(s.doneT);
@@ -2099,9 +2121,7 @@ function ownStop(why){
   const end = () => {
     if (s.done) return;
     ownFinish(s);
-    const need = Math.max(1, +settings.idLen||8), have = $("manual").value.length;
-    if (s.heard && entryMethod === "Voice" && have > 0 && have < need) voiceMsg(`Got ${have} of ${need}. Tap the microphone and say the rest.`);
-    else if (s.heard && have > need) voiceMsg(`Heard ${have} characters, the ID is ${need}. Check it, or Clear and try again.`);
+    if (s.heard && entryMethod === "Voice" && $("manual").value) voiceDone(lastVoice.said);
     else if (!s.heard) voiceMsg("");
   };
   s.onFinal = () => setTimeout(end, 0);
@@ -2109,6 +2129,8 @@ function ownStop(why){
   setTimeout(end, 1200);
 }
 if ((Speech || ownCapable) && !window.LR_TEST){ $("micBtn").hidden = false; $("micBtn").onclick = startVoice; }
+// test link: the page can't use the microphone there, so show the button but explain
+else if (window.LR_TEST){ $("micBtn").hidden = false; $("micBtn").onclick = () => voiceMsg("Voice entry is switched off on this test link, because the microphone can't be used here. It works on the GitHub version of the app."); }
 $("tabType").addEventListener("click", () => { preloadOwn(); });
 $("tabScan").addEventListener("click", () => { if (voiceBusy()) stopVoice(); });
 updateTypeHint();
@@ -2132,8 +2154,8 @@ updateTypeHint();
 })();
 
 /* ---- version + colour theme ---- */
-const APP_VERSION = "9 Oct 2026 · v31";
-$("appVer").textContent = "Label Rescan · " + APP_VERSION;
+const APP_VERSION = "22 Oct 2026 · v36";
+$("appVer").textContent = "UT600 Label Rescan · " + APP_VERSION;
 const THEMES = {auto:1, light:1, dark:1};
 let theme = "auto"; try{ theme = localStorage.getItem("lr_theme") || "auto"; }catch(e){}
 function applyTheme(t){
@@ -2152,7 +2174,7 @@ applyTheme(theme);
 
 drawPad();
 drawSession();
-if (settings.voiceDebug && typeof vlog === "function"){ document.getElementById("voiceLog").hidden = false; vlog("voice log on · v31"); }
+if (settings.voiceDebug && typeof vlog === "function"){ document.getElementById("voiceLog").hidden = false; vlog("voice log on · v36"); }
 try{
   const rs = JSON.parse(sessionStorage.getItem("lr_restore") || "null");
   if (rs){ sessionStorage.removeItem("lr_restore"); if (rs.tab === "type"){ tab("type"); if (rs.note) voiceMsg(rs.note); } }
